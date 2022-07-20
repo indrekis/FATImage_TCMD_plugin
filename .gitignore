@@ -10,6 +10,12 @@
 *.userosscache
 *.sln.docstates
 
+# PVS-Studio
+# build*
+*.PVS-Studio.*
+*.i
+*.CLMonitoring.*
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
