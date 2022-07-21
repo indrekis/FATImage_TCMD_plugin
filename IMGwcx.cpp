@@ -38,10 +38,10 @@ BOOL APIENTRY DllMain(HANDLE hModule,
 
 constexpr size_t sector_size = 512;
 
-// BPB = BIOS Parameter Block
-// BS = Extended Boot Record, EBPB 
-//! FAT is little endian.
 //! https://wiki.osdev.org/FAT#BPB_.28BIOS_Parameter_Block.29
+//! FAT is little endian.
+// BPB = BIOS Parameter Block
+// BS = (Extended) Boot Record. Extended BR is also called EBPB 
 #pragma pack(push, 1) // See also __attribute__((packed)) 
 typedef struct
 {
@@ -49,15 +49,15 @@ typedef struct
 	uint8_t  BS_OEMName[8];
 	uint16_t BPB_bytesPerSec; 
 	uint8_t  BPB_SecPerClus;
-	uint16_t BPB_RsvdSecCnt; // TODO: use this value too, 1 or more -- boot is included
-	uint8_t  BPB_NumFATs;	 // Often 1 or 2
+	uint16_t BPB_RsvdSecCnt;  // TODO: use this value too, 1 or more -- boot is included
+	uint8_t  BPB_NumFATs;	  // Often 1 or 2
 	uint16_t BPB_RootEntCnt;
-	uint16_t BPB_TotSec16; // 0 if more than 65535 -- then val in. BPB_TotSec32
+	uint16_t BPB_TotSec16;    // 0 if more than 65535 -- then val in. BPB_TotSec32
 	uint8_t  BPB_MediaDescr;
 	uint16_t BPB_SectorsPerFAT; // FAT12/16 only
 	uint16_t BPB_SecPerTrk;
 	uint16_t BPB_NumHeads;
-	uint32_t BPB_HiddSec; // "Number of hidden sectors. (i.e. the LBA of the beginning of the partition.)"
+	uint32_t BPB_HiddSec;     // "Number of hidden sectors. (i.e. the LBA of the beginning of the partition.)"
 	uint32_t BPB_TotSec32;
 	// Extended Boot Record, FAT12/16 only 
 	uint8_t  BS_DrvNum;	      // Ignore it
@@ -67,7 +67,7 @@ typedef struct
 	uint8_t  BS_VolLab[11];   // Should be padded by spaces
 	uint8_t  BS_FilSysType[8];// "The spec says never to trust the contents of this string for any use."
 	uint8_t  remaining_part[448];
-	uint16_t signature;    // 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
+	uint16_t signature;       // 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
 } tFAT12BootSec;
 #pragma pack(pop)
 
@@ -77,7 +77,7 @@ static_assert(std::endian::native == std::endian::little, "Wrong endiannes");
 #pragma pack(push, 1)
 typedef struct tFAT12Table2
 {
-	uint8_t data[12 * 512];
+	uint8_t data[12 * sector_size];
 } tFAT12Table;
 #pragma pack(pop)
 
