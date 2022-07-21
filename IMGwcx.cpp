@@ -206,6 +206,13 @@ DWORD DIR_NameToFileName(const char* DIR_Name, char* FileName)
 
 DWORD NextClus(DWORD firstclus, const tArchive* arch)
 {
+	// // find the 16-bit word that contains the 12-bit FAT entry
+	// uint16_t tmp = ((uint16_t*)(((char*)FAT) + index + (index / 2)));
+
+	// keep either the high 12-bits or low 12-bits depending on if the 
+	// index is even or odd.
+	// next_cluster = (tmp >> ((index % 2) ? 4 : 0)) & 0x0fff;
+	// https://stackoverflow.com/a/5768718
 	if (firstclus & 0x1)
 	{
 		return (DWORD(arch->fattable->data[((firstclus * 3) >> 1)]) +
@@ -297,8 +304,8 @@ int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD dept
 			if ((firstclus <= 1) || (firstclus >= 0xFF0)) goto error;
 			SetFilePointer(arch->hArchFile, arch->dataarea_ptr + (firstclus - 2) * portion_size, 0, FILE_BEGIN);
 		}
-		ReadFile(arch->hArchFile, sector, portion_size, &result, 0); 
-		if (result != portion_size) goto error;
+		res = ReadFile(arch->hArchFile, sector, portion_size, &result, 0); 
+		if (!res || result != portion_size) goto error;
 		i++;
 	} while (true);
 error:
@@ -344,14 +351,30 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	}
 
 	if ((arch->bootsec->BPB_BytesPerSec[0] != 0x00) ||
-		(arch->bootsec->BPB_BytesPerSec[1] != 0x02) ||
-		(arch->bootsec->signature[0] != 0x55)		||
-		(arch->bootsec->signature[1] != 0xAA) 
+		(arch->bootsec->BPB_BytesPerSec[1] != 0x02) 
 		)
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
 		goto error;
 	}
+
+	if ((arch->bootsec->signature[0] != 0x55) ||
+		(arch->bootsec->signature[1] != 0xAA)
+		)
+	{
+		//! Is it correct to create own dialogs in plugin?
+		int msgboxID = MessageBox(
+			NULL,
+			TEXT("Wrong BPB signature\nContinue?"),
+			TEXT("BPB Signature error"),
+			MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1
+		);
+		if (msgboxID == IDCANCEL) {
+			ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
+			goto error;
+		}
+	}
+
 	arch->fatsize = 256 * DWORD(arch->bootsec->BPB_FATSz16[1]) +
 		arch->bootsec->BPB_FATSz16[0];
 	if ((arch->fatsize < 1) || (arch->fatsize > 12))
