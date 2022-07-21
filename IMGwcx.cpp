@@ -55,7 +55,7 @@ typedef struct
 	uint16_t BPB_RootEntCnt;
 	uint16_t BPB_TotSec16; // 0 if more than 65535 -- then val in. BPB_TotSec32
 	uint8_t  BPB_MediaDescr;
-	uint8_t  BPB_SectorsPerFAT[2]; // FAT12/16 only
+	uint16_t BPB_SectorsPerFAT; // FAT12/16 only
 	uint16_t BPB_SecPerTrk;
 	uint16_t BPB_NumHeads;
 	uint32_t BPB_HiddSec; // "Number of hidden sectors. (i.e. the LBA of the beginning of the partition.)"
@@ -68,7 +68,7 @@ typedef struct
 	uint8_t  BS_VolLab[11];   // Should be padded by spaces
 	uint8_t  BS_FilSysType[8];// "The spec says never to trust the contents of this string for any use."
 	uint8_t  remaining_part[448];
-	uint8_t  signature[2];    // 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
+	uint16_t signature;    // 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
 } tFAT12BootSec;
 #pragma pack(pop)
 
@@ -414,18 +414,13 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 		goto error;
 	}
 
-//	if ((arch->bootsec->BPB_bytesPerSec[0] != 0x00) ||
-//		(arch->bootsec->BPB_bytesPerSec[1] != 0x02) 
-//		)
-	if (arch->bootsec->BPB_bytesPerSec != 0x200)
+	if (arch->bootsec->BPB_bytesPerSec != sector_size)
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
 		goto error;
 	}
 
-	if ((arch->bootsec->signature[0] != 0x55) ||
-		(arch->bootsec->signature[1] != 0xAA)
-		)
+	if ( arch->bootsec->signature != 0xAA55	)
 	{
 		//! Is it correct to create own dialogs in plugin?
 		int msgboxID = MessageBox(
@@ -440,8 +435,7 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 		}
 	}
 
-	arch->fatsize = 256 * DWORD(arch->bootsec->BPB_SectorsPerFAT[1]) +
-		arch->bootsec->BPB_SectorsPerFAT[0];
+	arch->fatsize = arch->bootsec->BPB_SectorsPerFAT;
 	if ((arch->fatsize < 1) || (arch->fatsize > 12))
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
