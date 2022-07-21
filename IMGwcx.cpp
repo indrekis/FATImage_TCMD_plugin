@@ -261,13 +261,12 @@ DWORD DIR_NameToFileName(const char* DIR_Name, char* FileName)
 
 DWORD NextClus(DWORD firstclus, const tArchive* arch)
 {
-	// // find the 16-bit word that contains the 12-bit FAT entry
-	// uint16_t tmp = ((uint16_t*)(((char*)FAT) + index + (index / 2)));
-
-	// keep either the high 12-bits or low 12-bits depending on if the 
-	// index is even or odd.
-	// next_cluster = (tmp >> ((index % 2) ? 4 : 0)) & 0x0fff;
-	// https://stackoverflow.com/a/5768718
+	const auto FAT_byte_pre = arch->fattable->data + ((firstclus * 3) >> 1); // firstclus + firstclus/2
+	//! Extract word, containing next cluster:
+	const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
+	// Extract correct 12 bits -- lower for odd, upper for even: 
+	return ( (*word_ptr) >> (( firstclus % 2) ? 4 : 0) ) & 0x0FFF;
+#if 0
 	if (firstclus & 0x1)
 	{
 		return (DWORD(arch->fattable->data[((firstclus * 3) >> 1)]) +
@@ -275,6 +274,7 @@ DWORD NextClus(DWORD firstclus, const tArchive* arch)
 	}
 	return (    DWORD(arch->fattable->data[((firstclus * 3) >> 1)]) +
 		    (DWORD(arch->fattable->data[((firstclus * 3) >> 1) + 1]) << 8)) & 0xFFF;
+#endif 
 }
 
 int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD depth)
