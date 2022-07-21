@@ -1,3 +1,6 @@
+#ifndef _WCXHEAD_H_
+#define _WCXHEAD_H_
+/* Contents of file wcxhead.h */
 /* It contains definitions of error codes, flags and callbacks */
 
 /* Error codes returned to calling application */
@@ -169,3 +172,5 @@ typedef int(__stdcall* tPkCryptProc)(int CryptoNr, int Mode,
     char* ArchiveName, char* Password, int maxlen);
 typedef int(__stdcall* tPkCryptProcW)(int CryptoNr, int Mode,
     WCHAR* ArchiveName, WCHAR* Password, int maxlen);
+
+#endif
