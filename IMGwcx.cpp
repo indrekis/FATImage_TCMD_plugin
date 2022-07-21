@@ -46,7 +46,7 @@ typedef struct
 {
 	uint8_t  BS_jmpBoot[3];
 	uint8_t  BS_OEMName[8];
-	uint8_t  BPB_uint8_tsPerSec[2];
+	uint8_t  BPB_bytesPerSec[2];
 	uint8_t  BPB_SecPerClus;
 	uint8_t  BPB_RsvdSecCnt[2];
 	uint8_t  BPB_NumFATs;
@@ -406,8 +406,8 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 		goto error;
 	}
 
-	if ((arch->bootsec->BPB_uint8_tsPerSec[0] != 0x00) ||
-		(arch->bootsec->BPB_uint8_tsPerSec[1] != 0x02) 
+	if ((arch->bootsec->BPB_bytesPerSec[0] != 0x00) ||
+		(arch->bootsec->BPB_bytesPerSec[1] != 0x02) 
 		)
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
