@@ -14,7 +14,9 @@ Windows Commander: is an excellent file manager
 				   made by Christian Ghisler
 */
 
-#pragma pvs(disable: 2005)
+#pragma pvs(disable: 2005,2001,303)
+// 2005 -- C casts
+// 2001, 303 -- about deprecated functions, like SetFilePointer/SetFilePointerEx
 
 #include "stdafx.h"
 #include "wcxhead.h"
@@ -161,14 +163,10 @@ DWORD DIR_AttrToFileAttr(BYTE DIR_Attr, int* FileAttr)
 
 int ValidChar(char mychar)
 {
-	const char nonValid[] = { '"', '*', '+', ',', '.', '/', ':', ';',
-						'<', '=', '>', '?', '[', '\\', ']', '|',
-						'\0' };
-	// {0x22,0x2A,0x2B,0x2C,0x2E,0x2F,0x3A,0x3B,
-	//0x3C, 0x3D, 0x3E, 0x3F, 0x5B, 0x5C, 0x5D, 0x7C};
+	const char nonValid[] = R"("*+,./:;<=>?[\]|)";
 
-	return !((mychar >= 0x00) && (mychar <= 0x20)) &&  //-V112
-		strchr(nonValid, mychar) == NULL;
+	return !((mychar >= '\x00') && (mychar <= '\x20')) &&  
+		strchr(nonValid, mychar) == nullptr;
 }
 
 #define DN_OK      0
@@ -211,8 +209,8 @@ DWORD NextClus(DWORD firstclus, const tArchive* arch)
 		return (DWORD(arch->fattable->data[((firstclus * 3) >> 1)]) +
 			(DWORD(arch->fattable->data[((firstclus * 3) >> 1) + 1]) << 8)) >> 4;
 	}
-	return (DWORD(arch->fattable->data[((firstclus * 3) >> 1)]) +
-		(DWORD(arch->fattable->data[((firstclus * 3) >> 1) + 1]) << 8)) & 0xFFF;
+	return (    DWORD(arch->fattable->data[((firstclus * 3) >> 1)]) +
+		    (DWORD(arch->fattable->data[((firstclus * 3) >> 1) + 1]) << 8)) & 0xFFF;
 }
 
 int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD depth)
@@ -304,8 +302,8 @@ error:
 
 myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 {
-	tArchive* arch = NULL;
-	tFAT12BootSec* bootsec = NULL;
+	tArchive* arch = nullptr;
+	tFAT12BootSec* bootsec = nullptr;
 	DWORD result;
 
 	ArchiveData->CmtBuf = 0;
@@ -314,9 +312,9 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	ArchiveData->CmtState = 0;
 
 	ArchiveData->OpenResult = E_NO_MEMORY;// default error type
-	if ((arch = new(nothrow) tArchive) == NULL)
+	if ((arch = new(nothrow) tArchive) == nullptr)
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	// trying to open
@@ -329,7 +327,7 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	}
 
 	//----------begin of bootsec in use
-	if ((bootsec = new(nothrow) tFAT12BootSec) == NULL)
+	if ((bootsec = new(nothrow) tFAT12BootSec) == nullptr)
 	{
 		goto error;
 	}
@@ -366,7 +364,7 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	//----------end of bootsec in use
 
 	// trying to read fat table
-	if ((arch->fattable = new(nothrow) tFAT12Table) == NULL)
+	if ((arch->fattable = new(nothrow) tFAT12Table) == nullptr)
 	{
 		goto error;
 	}
@@ -379,11 +377,11 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 
 	// trying to read file structure
 	arch->counter = 0;
-	arch->entrylist = NULL;
+	arch->entrylist = nullptr;
 	CreateFileList("", 0, arch, 0);
-	if (arch->entrylist != NULL)
+	if (arch->entrylist != nullptr)
 	{
-		while (arch->entrylist->prev != NULL)
+		while (arch->entrylist->prev != nullptr)
 		{
 			arch->entrylist = arch->entrylist->prev;
 		}
@@ -394,11 +392,11 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 
 error:
 	// memory must be freed
-	if (arch->hArchFile != NULL) CloseHandle(arch->hArchFile); // INVALID_HANDLE_VALUE
+	if (arch->hArchFile != nullptr) CloseHandle(arch->hArchFile); // INVALID_HANDLE_VALUE
 	delete arch->fattable;
 	delete bootsec;
 	delete arch;
-	return NULL;
+	return nullptr;
 };
 
 int IMG_NextItem(myHANDLE hArcData, tHeaderData* HeaderData)
@@ -408,12 +406,12 @@ int IMG_NextItem(myHANDLE hArcData, tHeaderData* HeaderData)
 	DWORD i = 0;
 
 	newentry = arch->entrylist;
-	while ((i < arch->counter) && (newentry != NULL))
+	while ((i < arch->counter) && (newentry != nullptr))
 	{
 		newentry = newentry->next;
 		i++;
 	}
-	if (newentry == NULL)
+	if (newentry == nullptr)
 	{
 		arch->counter = 0;
 		return E_END_ARCHIVE;
@@ -455,12 +453,12 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	if (Operation == PK_SKIP || Operation == PK_TEST) return 0;
 
 	newentry = arch->entrylist;
-	while ((i < arch->counter - 1) && (newentry != NULL))
+	while ((i < arch->counter - 1) && (newentry != nullptr))
 	{
 		newentry = newentry->next;
 		i++;
 	}
-	if (newentry == NULL) return E_END_ARCHIVE;
+	if (newentry == nullptr) return E_END_ARCHIVE;
 
 	if (newentry->FileAttr & ATTR_DIRECTORY) return 0;
 
@@ -470,7 +468,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	hUnpFile = CreateFile(dest, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
 	if (hUnpFile == INVALID_HANDLE_VALUE) return E_ECREATE;
 
-	if ((buff = new(nothrow) tDirSector) == NULL) {
+	if ((buff = new(nothrow) tDirSector) == nullptr) {
 		CloseHandle(hUnpFile);
 		return E_NO_MEMORY;
 	}
@@ -514,7 +512,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 		WORD((DWORD((newentry->FileTime))) & 0xFFFF),
 		&LocTime);
 	LocalFileTimeToFileTime(&LocTime, &GlobTime);
-	SetFileTime(hUnpFile, NULL, NULL, &GlobTime);
+	SetFileTime(hUnpFile, nullptr, nullptr, &GlobTime);
 
 	CloseHandle(hUnpFile);
 
@@ -534,7 +532,7 @@ int IMG_Close(myHANDLE hArcData)
 	tArchive* arch = hArcData;
 	tDirEntry* newentry;
 
-	while (arch->entrylist != NULL)
+	while (arch->entrylist != nullptr)
 	{
 		newentry = arch->entrylist->next;
 		delete arch->entrylist;
