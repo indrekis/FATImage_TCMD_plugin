@@ -42,11 +42,12 @@ constexpr size_t sector_size = 512;
 // BPB = BIOS Parameter Block
 // BS = Boot Sector
 //! FAT is little endian.
+#pragma pack(push, 1)
 typedef struct
 {
 	uint8_t  BS_jmpBoot[3];
 	uint8_t  BS_OEMName[8];
-	uint8_t  BPB_bytesPerSec[2];
+	uint16_t BPB_bytesPerSec; // uint8_t  BPB_bytesPerSec[2];
 	uint8_t  BPB_SecPerClus;
 	uint8_t  BPB_RsvdSecCnt[2];
 	uint8_t  BPB_NumFATs;
@@ -67,15 +68,19 @@ typedef struct
 	uint8_t  remaining_part[448];
 	uint8_t  signature[2];
 } tFAT12BootSec;
+#pragma pack(pop)
 
 static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
 static_assert(std::endian::native == std::endian::little, "Wrong endiannes");
 
+#pragma pack(push, 1)
 typedef struct tFAT12Table2
 {
 	uint8_t data[12 * 512];
 } tFAT12Table;
+#pragma pack(pop)
 
+#pragma pack(push, 1)
 typedef struct
 {
 	char  DIR_Name[11];
@@ -91,6 +96,7 @@ typedef struct
 	uint8_t  DIR_FstClusLO[2];
 	uint8_t  DIR_FileSize[4]; //-V112
 } tFAT12DirEntry;
+#pragma pack(pop)
 
 static_assert(sizeof(tFAT12DirEntry) == 32, "Wrong size of tFAT12DirEntry"); //-V112
 
@@ -406,9 +412,10 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 		goto error;
 	}
 
-	if ((arch->bootsec->BPB_bytesPerSec[0] != 0x00) ||
-		(arch->bootsec->BPB_bytesPerSec[1] != 0x02) 
-		)
+//	if ((arch->bootsec->BPB_bytesPerSec[0] != 0x00) ||
+//		(arch->bootsec->BPB_bytesPerSec[1] != 0x02) 
+//		)
+	if (arch->bootsec->BPB_bytesPerSec != 0x200)
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
 		goto error;
