@@ -47,22 +47,22 @@ typedef struct
 {
 	uint8_t  BS_jmpBoot[3];
 	uint8_t  BS_OEMName[8];
-	uint16_t BPB_bytesPerSec; // uint8_t  BPB_bytesPerSec[2];
+	uint16_t BPB_bytesPerSec; 
 	uint8_t  BPB_SecPerClus;
-	uint8_t  BPB_RsvdSecCnt[2];
+	uint16_t BPB_RsvdSecCnt; // TODO: use this value too
 	uint8_t  BPB_NumFATs;
 	uint8_t  BPB_RootEntCnt[2];
-	uint8_t  BPB_TotSec16[2];
+	uint16_t BPB_TotSec16;
 	uint8_t  BPB_Media;
 	uint8_t  BPB_FATSz16[2];
-	uint8_t  BPB_SecPerTrk[2];
-	uint8_t  BPB_NumHeads[2];
-	uint8_t  BPB_HiddSec[4]; //-V112
-	uint8_t  BPB_TotSec32[4]; //-V112
+	uint16_t BPB_SecPerTrk;
+	uint16_t BPB_NumHeads;
+	uint32_t BPB_HiddSec;
+	uint32_t BPB_TotSec32[4];
 	uint8_t  BS_DrvNum;
 	uint8_t  BS_Reserved1;
 	uint8_t  BS_BootSig;
-	uint8_t  BS_VolID[4]; //-V112
+	uint32_t BS_VolID;
 	uint8_t  BS_VolLab[11];
 	uint8_t  BS_FilSysType[8];
 	uint8_t  remaining_part[448];
