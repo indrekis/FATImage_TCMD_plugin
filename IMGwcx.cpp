@@ -40,10 +40,10 @@ BOOL APIENTRY DllMain(HANDLE hModule,
 constexpr size_t sector_size = 512;
 
 // BPB = BIOS Parameter Block
-// BS = Boot Sector
+// BS = Extended Boot Record, EBPB 
 //! FAT is little endian.
 //! https://wiki.osdev.org/FAT#BPB_.28BIOS_Parameter_Block.29
-#pragma pack(push, 1)
+#pragma pack(push, 1) // See also __attribute__((packed)) 
 typedef struct
 {
 	uint8_t  BS_jmpBoot[3];
@@ -51,23 +51,24 @@ typedef struct
 	uint16_t BPB_bytesPerSec; 
 	uint8_t  BPB_SecPerClus;
 	uint16_t BPB_RsvdSecCnt; // TODO: use this value too, 1 or more -- boot is included
-	uint8_t  BPB_NumFATs;
+	uint8_t  BPB_NumFATs;	 // Often 1 or 2
 	uint8_t  BPB_RootEntCnt[2];
 	uint16_t BPB_TotSec16; // 0 if more than 65535 -- then val in. BPB_TotSec32
-	uint8_t  BPB_Media;
-	uint8_t  BPB_FATSz16[2];
+	uint8_t  BPB_MediaDescr;
+	uint8_t  BPB_SectorsPerFAT[2]; // FAT12/16 only
 	uint16_t BPB_SecPerTrk;
 	uint16_t BPB_NumHeads;
-	uint32_t BPB_HiddSec;
+	uint32_t BPB_HiddSec; // "Number of hidden sectors. (i.e. the LBA of the beginning of the partition.)"
 	uint32_t BPB_TotSec32;
-	uint8_t  BS_DrvNum;
-	uint8_t  BS_Reserved1;
-	uint8_t  BS_BootSig;
-	uint32_t BS_VolID;
-	uint8_t  BS_VolLab[11];
-	uint8_t  BS_FilSysType[8];
+	// Extended Boot Record, FAT12/16 only 
+	uint8_t  BS_DrvNum;	      // Ignore it
+	uint8_t  BS_ReservedOrNT; // Ignore it
+	uint8_t  BS_BootSig;	  // Signature (must be 0x28 or 0x29). TODO: check
+	uint32_t BS_VolID;		  // Volume serial number
+	uint8_t  BS_VolLab[11];   // Should be padded by spaces
+	uint8_t  BS_FilSysType[8];// "The spec says never to trust the contents of this string for any use."
 	uint8_t  remaining_part[448];
-	uint8_t  signature[2];
+	uint8_t  signature[2];    // 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
 } tFAT12BootSec;
 #pragma pack(pop)
 
@@ -86,7 +87,7 @@ typedef struct
 {
 	char  DIR_Name[11];
 	uint8_t  DIR_Attr;
-	uint8_t  DIR_NTRes;
+	uint8_t  DIR_NTRes; // "Reserved for use by Windows NT"
 	uint8_t  DIR_CrtTimeTenth;
 	uint8_t  DIR_CrtTime[2];
 	uint8_t  DIR_CrtDate[2];
@@ -439,8 +440,8 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 		}
 	}
 
-	arch->fatsize = 256 * DWORD(arch->bootsec->BPB_FATSz16[1]) +
-		arch->bootsec->BPB_FATSz16[0];
+	arch->fatsize = 256 * DWORD(arch->bootsec->BPB_SectorsPerFAT[1]) +
+		arch->bootsec->BPB_SectorsPerFAT[0];
 	if ((arch->fatsize < 1) || (arch->fatsize > 12))
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
