@@ -22,7 +22,8 @@ Windows Commander: is an excellent file manager
 #include "wcxhead.h"
 #include <new>
 #include <memory>
-using std::nothrow;
+#include <cstddef>
+using std::nothrow, std::uint8_t;
 
 // The DLL entry point
 
@@ -36,55 +37,59 @@ BOOL APIENTRY DllMain(HANDLE hModule,
 
 //----------------FAT12 Definitions-------------
 
+constexpr size_t sector_size = 512;
+
 // BPB = BIOS Parameter Block
 // BS = Boot Sector
-
+//! FAT is little endian.
 typedef struct
 {
-	BYTE  BS_jmpBoot[3];
-	BYTE  BS_OEMName[8];
-	BYTE  BPB_BytesPerSec[2];
-	BYTE  BPB_SecPerClus;
-	BYTE  BPB_RsvdSecCnt[2];
-	BYTE  BPB_NumFATs;
-	BYTE  BPB_RootEntCnt[2];
-	BYTE  BPB_TotSec16[2];
-	BYTE  BPB_Media;
-	BYTE  BPB_FATSz16[2];
-	BYTE  BPB_SecPerTrk[2];
-	BYTE  BPB_NumHeads[2];
-	BYTE  BPB_HiddSec[4]; //-V112
-	BYTE  BPB_TotSec32[4]; //-V112
-	BYTE  BS_DrvNum;
-	BYTE  BS_Reserved1;
-	BYTE  BS_BootSig;
-	BYTE  BS_VolID[4]; //-V112
-	BYTE  BS_VolLab[11];
-	BYTE  BS_FilSysType[8];
-	BYTE  remaining_part[448];
-	BYTE  signature[2];
+	uint8_t  BS_jmpBoot[3];
+	uint8_t  BS_OEMName[8];
+	uint8_t  BPB_uint8_tsPerSec[2];
+	uint8_t  BPB_SecPerClus;
+	uint8_t  BPB_RsvdSecCnt[2];
+	uint8_t  BPB_NumFATs;
+	uint8_t  BPB_RootEntCnt[2];
+	uint8_t  BPB_TotSec16[2];
+	uint8_t  BPB_Media;
+	uint8_t  BPB_FATSz16[2];
+	uint8_t  BPB_SecPerTrk[2];
+	uint8_t  BPB_NumHeads[2];
+	uint8_t  BPB_HiddSec[4]; //-V112
+	uint8_t  BPB_TotSec32[4]; //-V112
+	uint8_t  BS_DrvNum;
+	uint8_t  BS_Reserved1;
+	uint8_t  BS_BootSig;
+	uint8_t  BS_VolID[4]; //-V112
+	uint8_t  BS_VolLab[11];
+	uint8_t  BS_FilSysType[8];
+	uint8_t  remaining_part[448];
+	uint8_t  signature[2];
 } tFAT12BootSec;
+
 static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
+static_assert(std::endian::native == std::endian::little, "Wrong endiannes");
 
 typedef struct tFAT12Table2
 {
-	BYTE data[12 * 512];
+	uint8_t data[12 * 512];
 } tFAT12Table;
 
 typedef struct
 {
 	char  DIR_Name[11];
-	BYTE  DIR_Attr;
-	BYTE  DIR_NTRes;
-	BYTE  DIR_CrtTimeTenth;
-	BYTE  DIR_CrtTime[2];
-	BYTE  DIR_CrtDate[2];
-	BYTE  DIR_LstAccDate[2];
-	BYTE  DIR_FstClusHI[2];
-	BYTE  DIR_WrtTime[2];
-	BYTE  DIR_WrtDate[2];
-	BYTE  DIR_FstClusLO[2];
-	BYTE  DIR_FileSize[4]; //-V112
+	uint8_t  DIR_Attr;
+	uint8_t  DIR_NTRes;
+	uint8_t  DIR_CrtTimeTenth;
+	uint8_t  DIR_CrtTime[2];
+	uint8_t  DIR_CrtDate[2];
+	uint8_t  DIR_LstAccDate[2];
+	uint8_t  DIR_FstClusHI[2];
+	uint8_t  DIR_WrtTime[2];
+	uint8_t  DIR_WrtDate[2];
+	uint8_t  DIR_FstClusLO[2];
+	uint8_t  DIR_FileSize[4]; //-V112
 } tFAT12DirEntry;
 
 static_assert(sizeof(tFAT12DirEntry) == 32, "Wrong size of tFAT12DirEntry"); //-V112
@@ -114,21 +119,22 @@ typedef struct tDirEntry
 	tDirEntry* prev;
 } tDirEntry;
 
+using file_handle_t = HANDLE;
 typedef struct
 {
 	char archname[MAX_PATH];
-	HANDLE hArchFile;    //opened file handle
+	file_handle_t hArchFile;    //opened file handle
 
 	tFAT12Table* fattable;
 	tDirEntry* entrylist;
 	tFAT12BootSec* bootsec;
 
-	LONG rootarea_ptr; //number of bytes before root area
-	LONG dataarea_ptr; //number of bytes before data area
-	DWORD rootentcnt;
-	DWORD fatsize;// in sectors
-	DWORD cluster_size; // in bytes
-	DWORD counter;	
+	size_t rootarea_ptr; //number of uint8_t before root area
+	size_t dataarea_ptr; //number of uint8_t before data area
+	uint32_t rootentcnt;
+	uint32_t fatsize;// in sectors
+	uint32_t cluster_size; // in uint8_ts
+	uint32_t counter;
 
 	tChangeVolProc pLocChangeVol;
 	tProcessDataProc pLocProcessData;
@@ -146,6 +152,55 @@ typedef tArchive* myHANDLE;
 
 //------------------=[ "Kernel" ]=-------------
 
+static const auto file_open_error_v = INVALID_HANDLE_VALUE;
+
+static file_handle_t open_file_shared_read(const char* filename) {
+	file_handle_t handle;
+	handle = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+	return handle;
+}
+
+static file_handle_t open_file_write(const char* filename) {
+	file_handle_t handle;
+	handle = CreateFile(filename, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
+	return handle;
+}
+
+//! Returns true if success
+static bool close_file(file_handle_t handle) {
+	return CloseHandle(handle);
+}
+
+//! Returns true if success
+static bool set_file_pointer(file_handle_t handle, size_t offset) {
+	LARGE_INTEGER offs;
+	offs.QuadPart = offset;
+	return SetFilePointerEx(handle, offs, nullptr, FILE_BEGIN);
+}
+
+static size_t read_file(file_handle_t handle, void* buffer_ptr, size_t size) {
+	bool res;
+	DWORD result = 0;
+	res = ReadFile(handle, buffer_ptr, static_cast<DWORD>(size), &result, nullptr);
+	if (!res) {
+		return static_cast<size_t>(-1);
+	}
+	else {
+		return static_cast<size_t>(result);
+	}
+}
+
+static size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t size) {
+	bool res;
+	DWORD result = 0;
+	res = WriteFile(handle, buffer_ptr, static_cast<DWORD>(size), &result, nullptr);
+	if (!res) {
+		return static_cast<size_t>(-1);
+	}
+	else {
+		return static_cast<size_t>(result);
+	}
+}
 
 #define AT_OK      0
 #define AT_VOL     1
@@ -153,7 +208,7 @@ typedef tArchive* myHANDLE;
 #define AT_LONG    3
 #define AT_INVALID 4
 
-DWORD DIR_AttrToFileAttr(BYTE DIR_Attr, unsigned* FileAttr)
+DWORD DIR_AttrToFileAttr(uint8_t DIR_Attr, unsigned* FileAttr)
 {
 	(*FileAttr) = (unsigned)DIR_Attr;
 	if (DIR_Attr == ATTR_VOLUME_ID) return AT_VOL;
@@ -227,24 +282,24 @@ int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD dept
 	tDirEntry* newentry;
 	tFAT12DirEntry* sector = nullptr;
 	DWORD i, j;
-	DWORD result;
-	DWORD portion_size = 0;
+	size_t result;
+	size_t portion_size = 0;
 
 	if (firstclus == 0)
 	{
-		SetFilePointer(arch->hArchFile, arch->rootarea_ptr, 0, FILE_BEGIN);
+		set_file_pointer(arch->hArchFile, arch->rootarea_ptr);
 		portion_size = 512;
 	}
 	else {
-		SetFilePointer(arch->hArchFile, arch->dataarea_ptr + (firstclus - 2) * 512, 0, FILE_BEGIN);
-		portion_size = arch->cluster_size;
+		set_file_pointer(arch->hArchFile, arch->dataarea_ptr + (firstclus - 2) * sector_size); //-V104
+		portion_size = arch->cluster_size; //-V101
 	}	
-	DWORD records_number = portion_size / static_cast<DWORD>(sizeof(tFAT12DirEntry));
-	sector = new(nothrow) tFAT12DirEntry[records_number]; //-V121
-	if (sector == NULL) goto error;
+	size_t records_number = portion_size / sizeof(tFAT12DirEntry);
+	sector = new(nothrow) tFAT12DirEntry[records_number];  //-V121
+	if (sector == nullptr) goto error;
 	if ((firstclus == 1) || (firstclus >= 0xFF0)) goto error;
-	bool res = ReadFile(arch->hArchFile, sector, portion_size, &result, 0); //-V124
-	if (!res || result != portion_size) goto error;
+	result = read_file(arch->hArchFile, sector, portion_size);
+	if (result != portion_size) goto error;
 
 	i = 1;
 	do {
@@ -294,18 +349,18 @@ int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD dept
 			j++;
 		}
 		if (j < records_number) goto error; 
-		if ((firstclus == 0) && ((i * records_number) >= arch->rootentcnt)) goto error;
+		if ((firstclus == 0) && ((i * records_number) >= arch->rootentcnt)) goto error; //-V104
 		if (firstclus == 0)
 		{
-			SetFilePointer(arch->hArchFile, arch->rootarea_ptr + i * 512, 0, FILE_BEGIN);
+			set_file_pointer(arch->hArchFile, arch->rootarea_ptr + i * sector_size); //-V104
 		}
 		else {
 			firstclus = NextClus(firstclus, arch);
 			if ((firstclus <= 1) || (firstclus >= 0xFF0)) goto error;
-			SetFilePointer(arch->hArchFile, arch->dataarea_ptr + (firstclus - 2) * portion_size, 0, FILE_BEGIN);
+			set_file_pointer(arch->hArchFile, arch->dataarea_ptr + static_cast<size_t>(firstclus - 2) * portion_size); 
 		}
-		res = ReadFile(arch->hArchFile, sector, portion_size, &result, 0); 
-		if (!res || result != portion_size) goto error;
+		result = read_file(arch->hArchFile, sector, portion_size);
+		if (result != portion_size) goto error;
 		i++;
 	} while (true);
 error:
@@ -316,7 +371,7 @@ error:
 myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 {
 	tArchive* arch = nullptr;
-	DWORD result;
+	size_t result;
 
 	ArchiveData->CmtBuf = 0;
 	ArchiveData->CmtBufSize = 0;
@@ -332,8 +387,9 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	// trying to open
 	memset(arch, 0, sizeof(tArchive));
 	strcpy(arch->archname, ArchiveData->ArcName);
-	arch->hArchFile = CreateFile(arch->archname, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
-	if (arch->hArchFile == INVALID_HANDLE_VALUE)
+	
+	arch->hArchFile = open_file_shared_read(arch->archname);
+	if (arch->hArchFile == file_open_error_v)
 	{
 		goto error;
 	}
@@ -343,15 +399,15 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	{
 		goto error;
 	}
-	bool res = ReadFile(arch->hArchFile, arch->bootsec, 512, &result, 0); //-V124
-	if (!res || result != 512)
+	result = read_file(arch->hArchFile, arch->bootsec, sector_size);
+	if (result != sector_size)
 	{
 		ArchiveData->OpenResult = E_EREAD;
 		goto error;
 	}
 
-	if ((arch->bootsec->BPB_BytesPerSec[0] != 0x00) ||
-		(arch->bootsec->BPB_BytesPerSec[1] != 0x02) 
+	if ((arch->bootsec->BPB_uint8_tsPerSec[0] != 0x00) ||
+		(arch->bootsec->BPB_uint8_tsPerSec[1] != 0x02) 
 		)
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
@@ -402,8 +458,8 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	{
 		goto error;
 	}
-	res = ReadFile(arch->hArchFile, arch->fattable, arch->fatsize * 512, &result, 0);
-	if (!res || result != arch->fatsize * 512)
+	result = read_file(arch->hArchFile, arch->fattable, arch->fatsize * sector_size);
+	if (result != arch->fatsize * sector_size)
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
 		goto error;
@@ -426,7 +482,7 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 
 error:
 	// memory must be freed
-	if (arch->hArchFile != nullptr) CloseHandle(arch->hArchFile); // INVALID_HANDLE_VALUE
+	if (arch->hArchFile != nullptr) close_file(arch->hArchFile); 
 	delete arch->fattable;
 	delete arch->bootsec;
 	delete arch;
@@ -477,8 +533,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	HANDLE hUnpFile;
 	DWORD nextclus;
 	DWORD remaining;
-	DWORD result;
-	DWORD towrite;
+	size_t towrite;
 	DWORD attributes;
 	FILETIME LocTime, GlobTime;
 
@@ -505,8 +560,9 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 		return E_NO_MEMORY;
 	}
 
-	hUnpFile = CreateFile(dest, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
-	if (hUnpFile == INVALID_HANDLE_VALUE) return E_ECREATE;
+	hUnpFile = open_file_write(dest);
+	if (hUnpFile == file_open_error_v) 
+		return E_ECREATE;
 
 	i = 0;
 	nextclus = newentry->FirstClus;
@@ -515,22 +571,21 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	{
 		if ((nextclus <= 1) || (nextclus >= 0xFF0))
 		{
-			CloseHandle(hUnpFile);
+			close_file(hUnpFile);
 			return E_UNKNOWN_FORMAT;
 		}
-		SetFilePointer(arch->hArchFile, arch->dataarea_ptr + (nextclus - 2) * arch->cluster_size,
-			           0, FILE_BEGIN);
-		towrite = (remaining > arch->cluster_size) ? (arch->cluster_size) : (remaining);
-		ReadFile(arch->hArchFile, buff.get(), towrite, &result, 0);
+		set_file_pointer(arch->hArchFile, arch->dataarea_ptr + static_cast<size_t>(nextclus - 2) * arch->cluster_size); //-V104
+		towrite = (remaining > arch->cluster_size) ? (arch->cluster_size) : (remaining); //-V101
+		size_t result = read_file(arch->hArchFile, buff.get(), towrite);
 		if (result != towrite)
 		{
-			CloseHandle(hUnpFile);
+			close_file(hUnpFile);
 			return E_EREAD;
 		}
-		WriteFile(hUnpFile, buff.get(), towrite, &result, 0);
+		result = write_file(hUnpFile, buff.get(), towrite);
 		if (result != towrite)
 		{
-			CloseHandle(hUnpFile);
+			close_file(hUnpFile);
 			return E_EWRITE;
 		}
 		if (remaining > arch->cluster_size) { remaining -= arch->cluster_size; }
@@ -547,7 +602,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	LocalFileTimeToFileTime(&LocTime, &GlobTime);
 	SetFileTime(hUnpFile, nullptr, nullptr, &GlobTime);
 
-	CloseHandle(hUnpFile);
+	close_file(hUnpFile);
 
 	// set file attributes
 	attributes = FILE_ATTRIBUTE_NORMAL;
@@ -572,7 +627,7 @@ int IMG_Close(myHANDLE hArcData)
 		arch->entrylist = newentry;
 	}
 
-	CloseHandle(arch->hArchFile);
+	close_file(arch->hArchFile);
 	delete arch->fattable;
 	delete arch;
 
@@ -609,7 +664,7 @@ int __stdcall ReadHeader(myHANDLE hArcData, tHeaderData* HeaderData)
 }
 
 // ProcessFile should unpack the specified file or test the integrity of the archive
-int __stdcall ProcessFile(myHANDLE hArcData, int Operation, char* DestPath, char* DestName)
+int __stdcall ProcessFile(myHANDLE hArcData, int Operation, char* DestPath, char* DestName) //-V2009
 {
 	return IMG_Process(hArcData, Operation, DestPath, DestName);
 }
