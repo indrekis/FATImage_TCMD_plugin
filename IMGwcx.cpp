@@ -21,6 +21,7 @@ Windows Commander: is an excellent file manager
 #include "stdafx.h"
 #include "wcxhead.h"
 #include <new>
+#include <memory>
 using std::nothrow;
 
 // The DLL entry point
@@ -43,7 +44,7 @@ typedef struct
 	BYTE  BS_jmpBoot[3];
 	BYTE  BS_OEMName[8];
 	BYTE  BPB_BytesPerSec[2];
-	BYTE  BPB_SecPerClus; // TODO: should be only 1 now
+	BYTE  BPB_SecPerClus;
 	BYTE  BPB_RsvdSecCnt[2];
 	BYTE  BPB_NumFATs;
 	BYTE  BPB_RootEntCnt[2];
@@ -60,8 +61,10 @@ typedef struct
 	BYTE  BS_VolID[4]; //-V112
 	BYTE  BS_VolLab[11];
 	BYTE  BS_FilSysType[8];
-	BYTE  remaining_part[450];
+	BYTE  remaining_part[448];
+	BYTE  signature[2];
 } tFAT12BootSec;
+static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
 
 typedef struct tFAT12Table2
 {
@@ -84,10 +87,7 @@ typedef struct
 	BYTE  DIR_FileSize[4]; //-V112
 } tFAT12DirEntry;
 
-typedef struct
-{
-	tFAT12DirEntry data[512 / 32];
-} tDirSector;
+static_assert(sizeof(tFAT12DirEntry) == 32, "Wrong size of tFAT12DirEntry"); //-V112
 
 #define ATTR_READONLY     0x01
 #define ATTR_HIDDEN       0x02
@@ -106,9 +106,9 @@ typedef struct tDirEntry
 {
 	char FileName[260];
 	char PathName[260];
-	int  FileSize;
-	int  FileTime;
-	int  FileAttr;
+	unsigned FileSize;
+	unsigned FileTime;
+	unsigned FileAttr;
 	DWORD FirstClus;
 	tDirEntry* next;
 	tDirEntry* prev;
@@ -121,12 +121,14 @@ typedef struct
 
 	tFAT12Table* fattable;
 	tDirEntry* entrylist;
+	tFAT12BootSec* bootsec;
 
-	LONG rootarea;//number of sectors before root area
-	LONG dataarea;//number of sectors before data area
+	LONG rootarea_ptr; //number of bytes before root area
+	LONG dataarea_ptr; //number of bytes before data area
 	DWORD rootentcnt;
 	DWORD fatsize;// in sectors
-	DWORD counter;
+	DWORD cluster_size; // in bytes
+	DWORD counter;	
 
 	tChangeVolProc pLocChangeVol;
 	tProcessDataProc pLocProcessData;
@@ -151,9 +153,9 @@ typedef tArchive* myHANDLE;
 #define AT_LONG    3
 #define AT_INVALID 4
 
-DWORD DIR_AttrToFileAttr(BYTE DIR_Attr, int* FileAttr)
+DWORD DIR_AttrToFileAttr(BYTE DIR_Attr, unsigned* FileAttr)
 {
-	(*FileAttr) = (int)DIR_Attr;
+	(*FileAttr) = (unsigned)DIR_Attr;
 	if (DIR_Attr == ATTR_VOLUME_ID) return AT_VOL;
 	if (DIR_Attr == ATTR_LONG_NAME) return AT_LONG;
 	if ((DIR_Attr & 0xC8) != 0) return AT_INVALID;
@@ -216,36 +218,40 @@ DWORD NextClus(DWORD firstclus, const tArchive* arch)
 int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD depth)
 {
 	tDirEntry* newentry;
-	tDirSector* sector = NULL;
+	tFAT12DirEntry* sector = nullptr;
 	DWORD i, j;
 	DWORD result;
+	DWORD portion_size = 0;
 
 	if (firstclus == 0)
 	{
-		SetFilePointer(arch->hArchFile, arch->rootarea * 512, 0, FILE_BEGIN);
+		SetFilePointer(arch->hArchFile, arch->rootarea_ptr, 0, FILE_BEGIN);
+		portion_size = 512;
 	}
 	else {
-		SetFilePointer(arch->hArchFile, (arch->dataarea + firstclus - 2) * 512, 0, FILE_BEGIN);
-	}
-	sector = new(nothrow) tDirSector;
+		SetFilePointer(arch->hArchFile, arch->dataarea_ptr + (firstclus - 2) * 512, 0, FILE_BEGIN);
+		portion_size = arch->cluster_size;
+	}	
+	DWORD records_number = portion_size / static_cast<DWORD>(sizeof(tFAT12DirEntry));
+	sector = new(nothrow) tFAT12DirEntry[records_number]; //-V121
 	if (sector == NULL) goto error;
 	if ((firstclus == 1) || (firstclus >= 0xFF0)) goto error;
-	ReadFile(arch->hArchFile, sector, 512, &result, 0); //-V124
-	if (result != 512) goto error;
+	bool res = ReadFile(arch->hArchFile, sector, portion_size, &result, 0); //-V124
+	if (!res || result != portion_size) goto error;
 
 	i = 1;
 	do {
 		j = 0;
-		while ((j < 512 / 32) && (sector->data[j].DIR_Name[0] != char(0x00))) //-V112
+		while ((j < records_number) && (sector[j].DIR_Name[0] != char(0x00))) //-V112
 		{
 			if ((newentry = new(nothrow) tDirEntry) == NULL) goto error;
-			switch (DIR_AttrToFileAttr(sector->data[j].DIR_Attr, &newentry->FileAttr))
+			switch (DIR_AttrToFileAttr(sector[j].DIR_Attr, &newentry->FileAttr))
 			{
 			case AT_LONG:
 			case AT_VOL:
 			case AT_INVALID: {delete newentry; j++; continue; };
 			}
-			switch (DIR_NameToFileName(sector->data[j].DIR_Name, newentry->FileName))
+			switch (DIR_NameToFileName(sector[j].DIR_Name, newentry->FileName))
 			{
 			case DN_UNKNOWN:
 			case DN_DELETED: {delete newentry; j++; continue; };
@@ -257,17 +263,17 @@ int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD dept
 				strcat(newentry->PathName, "\\");
 			}
 			strcat(newentry->PathName, newentry->FileName);
-			newentry->FileTime = ((DWORD)sector->data[j].DIR_WrtDate[1] << 24) +
-				((DWORD)sector->data[j].DIR_WrtDate[0] << 16) +
-				((DWORD)sector->data[j].DIR_WrtTime[1] << 8) +
-				(DWORD)sector->data[j].DIR_WrtTime[0];
-			newentry->FileSize = ((DWORD)sector->data[j].DIR_FileSize[3] << 24) +
-				((DWORD)sector->data[j].DIR_FileSize[2] << 16) +
-				((DWORD)sector->data[j].DIR_FileSize[1] << 8) +
-				(DWORD)sector->data[j].DIR_FileSize[0];
-			newentry->FirstClus = ((DWORD)sector->data[j].DIR_FstClusLO[1] << 8) +
-				(DWORD)sector->data[j].DIR_FstClusLO[0];
-			newentry->next = NULL;
+			newentry->FileTime = ((DWORD)sector[j].DIR_WrtDate[1] << 24) +
+				((DWORD)sector[j].DIR_WrtDate[0] << 16) +
+				((DWORD)sector[j].DIR_WrtTime[1] << 8) +
+				(DWORD)sector[j].DIR_WrtTime[0];
+			newentry->FileSize = ((DWORD)sector[j].DIR_FileSize[3] << 24) +
+				((DWORD)sector[j].DIR_FileSize[2] << 16) +
+				((DWORD)sector[j].DIR_FileSize[1] << 8) +
+				(DWORD)sector[j].DIR_FileSize[0];
+			newentry->FirstClus = ((DWORD)sector[j].DIR_FstClusLO[1] << 8) +
+				(DWORD)sector[j].DIR_FstClusLO[0];
+			newentry->next = nullptr;
 			newentry->prev = arch->entrylist;
 			if (arch->entrylist != NULL) arch->entrylist->next = newentry;
 			arch->entrylist = newentry;
@@ -280,30 +286,29 @@ int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD dept
 			}
 			j++;
 		}
-		if (j < 512 / 32) goto error; //-V112
-		if ((firstclus == 0) && ((i * 512 / 32) >= arch->rootentcnt)) goto error; //-V112
+		if (j < records_number) goto error; 
+		if ((firstclus == 0) && ((i * records_number) >= arch->rootentcnt)) goto error;
 		if (firstclus == 0)
 		{
-			SetFilePointer(arch->hArchFile, (arch->rootarea + i) * 512, 0, FILE_BEGIN);
+			SetFilePointer(arch->hArchFile, arch->rootarea_ptr + i * 512, 0, FILE_BEGIN);
 		}
 		else {
 			firstclus = NextClus(firstclus, arch);
 			if ((firstclus <= 1) || (firstclus >= 0xFF0)) goto error;
-			SetFilePointer(arch->hArchFile, (arch->dataarea + firstclus - 2) * 512, 0, FILE_BEGIN);
+			SetFilePointer(arch->hArchFile, arch->dataarea_ptr + (firstclus - 2) * portion_size, 0, FILE_BEGIN);
 		}
-		ReadFile(arch->hArchFile, sector, 512, &result, 0); //-V124
-		if (result != 512) goto error;
+		ReadFile(arch->hArchFile, sector, portion_size, &result, 0); 
+		if (result != portion_size) goto error;
 		i++;
 	} while (true);
 error:
-	delete sector;
+	delete[] sector;
 	return 0;
 }
 
 myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 {
 	tArchive* arch = nullptr;
-	tFAT12BootSec* bootsec = nullptr;
 	DWORD result;
 
 	ArchiveData->CmtBuf = 0;
@@ -327,40 +332,46 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	}
 
 	//----------begin of bootsec in use
-	if ((bootsec = new(nothrow) tFAT12BootSec) == nullptr)
+	if ((arch->bootsec = new(nothrow) tFAT12BootSec) == nullptr)
 	{
 		goto error;
 	}
-	ReadFile(arch->hArchFile, bootsec, 512, &result, 0); //-V124
-	if (result != 512)
+	bool res = ReadFile(arch->hArchFile, arch->bootsec, 512, &result, 0); //-V124
+	if (!res || result != 512)
 	{
 		ArchiveData->OpenResult = E_EREAD;
 		goto error;
 	}
-	if ((bootsec->BPB_BytesPerSec[0] != 0x00) ||
-		(bootsec->BPB_BytesPerSec[1] != 0x02) ||
-		(bootsec->BPB_SecPerClus != 0x01))
+
+	if ((arch->bootsec->BPB_BytesPerSec[0] != 0x00) ||
+		(arch->bootsec->BPB_BytesPerSec[1] != 0x02) ||
+		(arch->bootsec->signature[0] != 0x55)		||
+		(arch->bootsec->signature[1] != 0xAA) 
+		)
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
 		goto error;
 	}
-	arch->fatsize = 256 * DWORD(bootsec->BPB_FATSz16[1]) +
-		bootsec->BPB_FATSz16[0];
+	arch->fatsize = 256 * DWORD(arch->bootsec->BPB_FATSz16[1]) +
+		arch->bootsec->BPB_FATSz16[0];
 	if ((arch->fatsize < 1) || (arch->fatsize > 12))
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
 		goto error;
 	}
-	arch->rootentcnt = 256 * DWORD(bootsec->BPB_RootEntCnt[1]) +
-		bootsec->BPB_RootEntCnt[0];
-	if (arch->rootentcnt > 0xE0) //224 is the maximum in a 1.44 floppy
+	arch->rootentcnt = 256 * DWORD(arch->bootsec->BPB_RootEntCnt[1]) +
+		arch->bootsec->BPB_RootEntCnt[0];
+	//224 is the maximum in a 1.44 floppy
+	// But 2.88 disk exists
+	/*
+	if (arch->rootentcnt > 0xE0) 
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
 		goto error;
-	}
-	arch->rootarea = 1 + arch->fatsize * bootsec->BPB_NumFATs;
-	arch->dataarea = arch->rootarea + (arch->rootentcnt * 32 + 511) / 512; //-V112
-	// delete bootsec; // Double free in error! 
+	}*/
+	arch->cluster_size = 512 * arch->bootsec->BPB_SecPerClus;
+	arch->rootarea_ptr = (1 + arch->fatsize * arch->bootsec->BPB_NumFATs) * 512;
+	arch->dataarea_ptr = arch->rootarea_ptr + arch->rootentcnt * sizeof(tFAT12DirEntry); 
 	//----------end of bootsec in use
 
 	// trying to read fat table
@@ -368,14 +379,14 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	{
 		goto error;
 	}
-	ReadFile(arch->hArchFile, arch->fattable, arch->fatsize * 512, &result, 0);
-	if (result != arch->fatsize * 512)
+	res = ReadFile(arch->hArchFile, arch->fattable, arch->fatsize * 512, &result, 0);
+	if (!res || result != arch->fatsize * 512)
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
 		goto error;
 	}
 
-	// trying to read file structure
+	// trying to read root directory
 	arch->counter = 0;
 	arch->entrylist = nullptr;
 	CreateFileList("", 0, arch, 0);
@@ -386,7 +397,7 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 			arch->entrylist = arch->entrylist->prev;
 		}
 	}
-	delete bootsec;
+
 	ArchiveData->OpenResult = 0;// ok
 	return arch;
 
@@ -394,7 +405,7 @@ error:
 	// memory must be freed
 	if (arch->hArchFile != nullptr) CloseHandle(arch->hArchFile); // INVALID_HANDLE_VALUE
 	delete arch->fattable;
-	delete bootsec;
+	delete arch->bootsec;
 	delete arch;
 	return nullptr;
 };
@@ -446,9 +457,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	DWORD result;
 	DWORD towrite;
 	DWORD attributes;
-	tDirSector* buff;
 	FILETIME LocTime, GlobTime;
-
 
 	if (Operation == PK_SKIP || Operation == PK_TEST) return 0;
 
@@ -465,13 +474,17 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	if (DestPath) strcpy(dest, DestPath);
 	if (DestName) strcat(dest, DestName);
 
+	std::unique_ptr<char[]> buff;
+	try {
+		buff = std::make_unique<char[]>( static_cast<size_t>(arch->cluster_size));
+	}
+	catch (std::bad_alloc& ) {
+		return E_NO_MEMORY;
+	}
+
 	hUnpFile = CreateFile(dest, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
 	if (hUnpFile == INVALID_HANDLE_VALUE) return E_ECREATE;
 
-	if ((buff = new(nothrow) tDirSector) == nullptr) {
-		CloseHandle(hUnpFile);
-		return E_NO_MEMORY;
-	}
 	i = 0;
 	nextclus = newentry->FirstClus;
 	remaining = newentry->FileSize;
@@ -480,32 +493,29 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 		if ((nextclus <= 1) || (nextclus >= 0xFF0))
 		{
 			CloseHandle(hUnpFile);
-			delete buff;
 			return E_UNKNOWN_FORMAT;
 		}
-		SetFilePointer(arch->hArchFile, (arch->dataarea + nextclus - 2) * 512, 0, FILE_BEGIN);
-		towrite = (remaining > 512) ? (512) : (remaining);
-		ReadFile(arch->hArchFile, buff, towrite, &result, 0);
+		SetFilePointer(arch->hArchFile, arch->dataarea_ptr + (nextclus - 2) * arch->cluster_size,
+			           0, FILE_BEGIN);
+		towrite = (remaining > arch->cluster_size) ? (arch->cluster_size) : (remaining);
+		ReadFile(arch->hArchFile, buff.get(), towrite, &result, 0);
 		if (result != towrite)
 		{
 			CloseHandle(hUnpFile);
-			delete buff;
 			return E_EREAD;
 		}
-		WriteFile(hUnpFile, buff, towrite, &result, 0);
+		WriteFile(hUnpFile, buff.get(), towrite, &result, 0);
 		if (result != towrite)
 		{
 			CloseHandle(hUnpFile);
-			delete buff;
 			return E_EWRITE;
 		}
-		if (remaining > 512) { remaining -= 512; }
+		if (remaining > arch->cluster_size) { remaining -= arch->cluster_size; }
 		else { remaining = 0; }
 
 		nextclus = NextClus(nextclus, arch);
 		i++;
 	}
-	delete buff;
 
 	// set file time
 	DosDateTimeToFileTime(WORD((DWORD((newentry->FileTime))) >> 16),
