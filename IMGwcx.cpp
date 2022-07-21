@@ -42,6 +42,7 @@ constexpr size_t sector_size = 512;
 // BPB = BIOS Parameter Block
 // BS = Boot Sector
 //! FAT is little endian.
+//! https://wiki.osdev.org/FAT#BPB_.28BIOS_Parameter_Block.29
 #pragma pack(push, 1)
 typedef struct
 {
@@ -49,16 +50,16 @@ typedef struct
 	uint8_t  BS_OEMName[8];
 	uint16_t BPB_bytesPerSec; 
 	uint8_t  BPB_SecPerClus;
-	uint16_t BPB_RsvdSecCnt; // TODO: use this value too
+	uint16_t BPB_RsvdSecCnt; // TODO: use this value too, 1 or more -- boot is included
 	uint8_t  BPB_NumFATs;
 	uint8_t  BPB_RootEntCnt[2];
-	uint16_t BPB_TotSec16;
+	uint16_t BPB_TotSec16; // 0 if more than 65535 -- then val in. BPB_TotSec32
 	uint8_t  BPB_Media;
 	uint8_t  BPB_FATSz16[2];
 	uint16_t BPB_SecPerTrk;
 	uint16_t BPB_NumHeads;
 	uint32_t BPB_HiddSec;
-	uint32_t BPB_TotSec32[4];
+	uint32_t BPB_TotSec32;
 	uint8_t  BS_DrvNum;
 	uint8_t  BS_Reserved1;
 	uint8_t  BS_BootSig;
