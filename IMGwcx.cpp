@@ -52,7 +52,7 @@ typedef struct
 	uint8_t  BPB_SecPerClus;
 	uint16_t BPB_RsvdSecCnt; // TODO: use this value too, 1 or more -- boot is included
 	uint8_t  BPB_NumFATs;	 // Often 1 or 2
-	uint8_t  BPB_RootEntCnt[2];
+	uint16_t BPB_RootEntCnt;
 	uint16_t BPB_TotSec16; // 0 if more than 65535 -- then val in. BPB_TotSec32
 	uint8_t  BPB_MediaDescr;
 	uint8_t  BPB_SectorsPerFAT[2]; // FAT12/16 only
@@ -447,10 +447,10 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
 		goto error;
 	}
-	arch->rootentcnt = 256 * DWORD(arch->bootsec->BPB_RootEntCnt[1]) +
-		arch->bootsec->BPB_RootEntCnt[0];
+	arch->rootentcnt = arch->bootsec->BPB_RootEntCnt;
 	//224 is the maximum in a 1.44 floppy
 	// But 2.88 disk exists
+	//! TODO: Warn for too large or too small numbers
 	/*
 	if (arch->rootentcnt > 0xE0) 
 	{
