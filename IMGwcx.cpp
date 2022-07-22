@@ -90,7 +90,7 @@ struct FATxx_dir_entry_t
 	uint16_t DIR_CrtTime;	// TODO: Use it too
 	uint16_t DIR_CrtDate;	// TODO: Use it too
 	uint16_t DIR_LstAccDate;
-	uint16_t DIR_FstClusHI;
+	uint16_t DIR_FstClusHI; // High bytes of first cluster on FAT32, obscure attribute of some OS for FAT12/16 -- ignore
 	uint16_t DIR_WrtTime;
 	uint16_t DIR_WrtDate;
 	uint16_t DIR_FstClusLO;
@@ -368,7 +368,8 @@ int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD dep
 			strcat_s(newentryref.PathName, sizeof(newentryref.PathName), newentryref.FileName);
 			newentryref.FileTime = combine(sector[entry_in_cluster].DIR_WrtDate, sector[entry_in_cluster].DIR_WrtTime);
 			newentryref.FileSize = sector[entry_in_cluster].DIR_FileSize;
-			newentryref.FirstClus = combine(sector[entry_in_cluster].DIR_FstClusHI, sector[entry_in_cluster].DIR_FstClusLO);
+			newentryref.FirstClus = sector[entry_in_cluster].DIR_FstClusLO;
+			//newentryref.FirstClus = combine(sector[entry_in_cluster].DIR_FstClusHI, sector[entry_in_cluster].DIR_FstClusLO);
 
 			if ((newentryref.FileAttr & ATTR_DIRECTORY) &&
 				(newentryref.FirstClus < 0xFF0) && (newentryref.FirstClus > 0x1)
