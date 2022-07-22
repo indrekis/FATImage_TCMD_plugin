@@ -162,6 +162,10 @@ static size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t si
 		return static_cast<size_t>(result);
 	}
 }
+
+static uint32_t combine(uint16_t hi, uint16_t lo) {
+	return (static_cast<uint32_t>(hi) << sizeof(hi) * CHAR_BIT) + hi; //   CHAR_BIT == 8
+}
 //----------------IMG Definitions-------------
 
 struct tDirEntry
@@ -321,13 +325,9 @@ int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD dep
 				strcat(newentry->PathName, "\\");
 			}
 			strcat(newentry->PathName, newentry->FileName);
-			newentry->FileTime =
-				(static_cast<uint32_t>(sector[j].DIR_WrtDate) << 16) +
-				                       sector[j].DIR_WrtTime;
+			newentry->FileTime = combine(sector[j].DIR_WrtDate, sector[j].DIR_WrtTime);
 			newentry->FileSize = sector[j].DIR_FileSize;
-			newentry->FirstClus = 
-				(static_cast<uint32_t>(sector[j].DIR_FstClusHI) << 16) +
-				sector[j].DIR_FstClusLO;
+			newentry->FirstClus = combine(sector[j].DIR_FstClusHI, sector[j].DIR_FstClusLO);
 			newentry->next = nullptr;
 			newentry->prev = arch->entrylist;
 			if (arch->entrylist != NULL) arch->entrylist->next = newentry;
