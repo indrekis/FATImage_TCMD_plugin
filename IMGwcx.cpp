@@ -88,12 +88,12 @@ typedef struct
 	uint8_t  DIR_Attr;
 	uint8_t  DIR_NTRes; // "Reserved for use by Windows NT"
 	uint8_t  DIR_CrtTimeTenth;
-	uint8_t  DIR_CrtTime[2];
-	uint8_t  DIR_CrtDate[2];
-	uint8_t  DIR_LstAccDate[2];
+	uint16_t DIR_CrtTime;	// TODO: Use it too
+	uint16_t DIR_CrtDate;	// TODO: Use it too
+	uint16_t DIR_LstAccDate;
 	uint8_t  DIR_FstClusHI[2];
-	uint8_t  DIR_WrtTime[2];
-	uint8_t  DIR_WrtDate[2];
+	uint16_t DIR_WrtTime;
+	uint16_t DIR_WrtDate;
 	uint8_t  DIR_FstClusLO[2];
 	uint32_t DIR_FileSize;
 } tFAT12DirEntry;
@@ -273,15 +273,6 @@ DWORD NextClus(DWORD firstclus, const tArchive* arch)
 	const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
 	// Extract correct 12 bits -- lower for odd, upper for even: 
 	return ( (*word_ptr) >> (( firstclus % 2) ? 4 : 0) ) & 0x0FFF;
-#if 0
-	if (firstclus & 0x1)
-	{
-		return (DWORD(arch->fattable->data[((firstclus * 3) >> 1)]) +
-			(DWORD(arch->fattable->data[((firstclus * 3) >> 1) + 1]) << 8)) >> 4;
-	}
-	return (    DWORD(arch->fattable->data[((firstclus * 3) >> 1)]) +
-		    (DWORD(arch->fattable->data[((firstclus * 3) >> 1) + 1]) << 8)) & 0xFFF;
-#endif 
 }
 
 int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD depth)
@@ -332,10 +323,9 @@ int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD dept
 				strcat(newentry->PathName, "\\");
 			}
 			strcat(newentry->PathName, newentry->FileName);
-			newentry->FileTime = ((DWORD)sector[j].DIR_WrtDate[1] << 24) +
-				((DWORD)sector[j].DIR_WrtDate[0] << 16) +
-				((DWORD)sector[j].DIR_WrtTime[1] << 8) +
-				(DWORD)sector[j].DIR_WrtTime[0];
+			newentry->FileTime =
+				(static_cast<uint32_t>(sector[j].DIR_WrtDate) << 16) +
+				                       sector[j].DIR_WrtTime;
 			newentry->FileSize = sector[j].DIR_FileSize;
 			newentry->FirstClus = ((DWORD)sector[j].DIR_FstClusLO[1] << 8) +
 				(DWORD)sector[j].DIR_FstClusLO[0];
