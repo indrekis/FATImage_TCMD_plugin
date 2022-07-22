@@ -13,9 +13,6 @@
 * hesitate to send me an email.
 */
 
-#pragma pvs(disable: 2005)
-// 2005 -- C casts
-
 #include "stdafx.h"
 #include "wcxhead.h"
 #include <new>
@@ -144,7 +141,6 @@ static bool delete_file(const char* filename) {
 	return DeleteFile(filename);
 }
 
-
 bool get_temp_filename(char* buff, const char prefix[]) {
 	char dest_path[MAX_PATH];
 	auto dwRetVal = GetTempPath(MAX_PATH,  // length of the buffer
@@ -195,7 +191,7 @@ static size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t si
 }
 
 static uint32_t combine(uint16_t hi, uint16_t lo) {
-	return (static_cast<uint32_t>(hi) << sizeof(hi) * CHAR_BIT) + lo; //   CHAR_BIT == 8
+	return ( static_cast<uint32_t>(hi) << (sizeof(hi) * CHAR_BIT) ) + lo; 
 }
 //----------------IMG Definitions-------------
 
@@ -271,9 +267,9 @@ enum dir_entry_name_types_t {
 };
 
 dir_entry_name_types_t get_dir_entry_type(const char* DIR_Name) {
-	if (DIR_Name[0] == char(0x00)) return DN_FREE;
-	if (DIR_Name[0] == char(0xE5)) return DN_DELETED;
-	if (DIR_Name[0] == char(0x05)) return DN_DELETED;
+	if (DIR_Name[0] == '\x00') return DN_FREE;
+	if (DIR_Name[0] == '\xE5') return DN_DELETED;
+	if (DIR_Name[0] == '\x05') return DN_DELETED;
 	if (!ValidChar(DIR_Name[0]))   return DN_UNKNOWN;
 	return DN_OK;
 }
@@ -340,7 +336,7 @@ int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD dep
 
 	do {
 		size_t entry_in_cluster = 0;
-		while ((entry_in_cluster < records_number) && (sector[entry_in_cluster].DIR_Name[0] != char(0x00))) 
+		while ((entry_in_cluster < records_number) && (sector[entry_in_cluster].DIR_Name[0] != '\x00'))
 		{
 			switch (get_dir_entry_type(sector[entry_in_cluster].DIR_Name))
 			{
@@ -471,15 +467,6 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 		return nullptr;
 	}
 	arch->rootentcnt = arch->bootsec.BPB_RootEntCnt;
-	//224 is the maximum in a 1.44 floppy
-	// But 2.88 disk exists
-	//! TODO: Warn for too large or too small numbers
-	/*
-	if (arch->rootentcnt > 0xE0) 
-	{
-		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
-		goto error;
-	}*/
 	arch->cluster_size = 512 * arch->bootsec.BPB_SecPerClus;
 	arch->rootarea_off = sector_size * (arch->bootsec.BPB_RsvdSecCnt +
 		        arch->sectors_in_FAT * static_cast<size_t>(arch->bootsec.BPB_NumFATs));
@@ -538,7 +525,6 @@ int IMG_NextItem(myHANDLE arch, tHeaderData* HeaderData)
 int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const char* DestName)
 {
 	tArchive* arch = hArcData;
-	DWORD i = 0;
 	char dest[260] = "";
 	HANDLE hUnpFile;
 	size_t nextclus;
@@ -547,13 +533,10 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	DWORD attributes;
 	FILETIME LocTime, GlobTime;
 
-	//if (Operation == PK_SKIP || Operation == PK_TEST) return 0;
 	if (Operation == PK_SKIP ) return 0;
-
 
 	if( arch->counter == 0 ) 
 		return E_END_ARCHIVE;
-
 	// if (newentry->FileAttr & ATTR_DIRECTORY) return 0;
 
 	if (Operation == PK_TEST) {
@@ -584,7 +567,6 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	if (hUnpFile == file_open_error_v) 
 		return E_ECREATE;
 
-	i = 0;
 	const auto& cur_entry = arch->arc_dir_entries[arch->counter-1];
 	nextclus = cur_entry.FirstClus; //-V101
 	remaining = cur_entry.FileSize;
@@ -613,12 +595,11 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 		else { remaining = 0; }
 
 		nextclus = next_cluster_FAT12(nextclus, arch);
-		i++;
 	}
 
 	// set file time
-	DosDateTimeToFileTime(WORD((DWORD((cur_entry.FileTime))) >> 16),
-		WORD((DWORD((cur_entry.FileTime))) & 0xFFFF),
+	DosDateTimeToFileTime(static_cast<uint16_t>(static_cast<uint32_t>(cur_entry.FileTime) >> 16),
+		static_cast<uint16_t>(static_cast<uint32_t>(cur_entry.FileTime) & static_cast<uint32_t>(0xFFFF)),
 		&LocTime);
 	LocalFileTimeToFileTime(&LocTime, &GlobTime);
 	SetFileTime(hUnpFile, nullptr, nullptr, &GlobTime);
@@ -648,16 +629,12 @@ int IMG_Close(myHANDLE hArcData)
 
 void IMG_SetCallBackVol(myHANDLE hArcData, tChangeVolProc pChangeVolProc)
 {
-	tArchive* arch = (tArchive*)(hArcData);
-
-	arch->pLocChangeVol = pChangeVolProc;
+	hArcData->pLocChangeVol = pChangeVolProc;
 };
 
 void IMG_SetCallBackProc(myHANDLE hArcData, tProcessDataProc pProcessDataProc)
 {
-	tArchive* arch = (tArchive*)(hArcData);
-
-	arch->pLocProcessData = pProcessDataProc;
+	hArcData->pLocProcessData = pProcessDataProc;
 };
 
 
