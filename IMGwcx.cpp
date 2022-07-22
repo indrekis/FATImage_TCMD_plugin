@@ -164,7 +164,7 @@ static size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t si
 }
 
 static uint32_t combine(uint16_t hi, uint16_t lo) {
-	return (static_cast<uint32_t>(hi) << sizeof(hi) * CHAR_BIT) + hi; //   CHAR_BIT == 8
+	return (static_cast<uint32_t>(hi) << sizeof(hi) * CHAR_BIT) + lo; //   CHAR_BIT == 8
 }
 //----------------IMG Definitions-------------
 
@@ -286,13 +286,13 @@ int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD dep
 	size_t portion_size = 0;
 
 	if (firstclus == 0)
-	{
+	{   // Read whole dir at once
 		set_file_pointer(arch->hArchFile, arch->rootarea_off);
-		portion_size = 512;
+		portion_size = arch->dataarea_off - arch->rootarea_off; // Size of root dir
 	}
 	else {
 		set_file_pointer(arch->hArchFile, arch->dataarea_off + (firstclus - 2) * sector_size); //-V104
-		portion_size = arch->cluster_size; //-V101
+		portion_size = arch->cluster_size; 
 	}	
 	size_t records_number = portion_size / sizeof(FATxx_dir_entry_t);
 	sector = new(nothrow) FATxx_dir_entry_t[records_number];  //-V121
@@ -342,10 +342,9 @@ int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD dep
 			j++;
 		}
 		if (j < records_number) goto error; 
-		if ((firstclus == 0) && ((i * records_number) >= arch->rootentcnt)) goto error; //-V104
 		if (firstclus == 0)
 		{
-			set_file_pointer(arch->hArchFile, arch->rootarea_off + i * sector_size); //-V104
+			break;
 		}
 		else {
 			firstclus = next_cluster_FAT12(firstclus, arch);
