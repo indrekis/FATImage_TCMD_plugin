@@ -128,9 +128,39 @@ static file_handle_t open_file_write(const char* filename) {
 	return handle;
 }
 
+static file_handle_t open_file_overwrite(const char* filename) {
+	file_handle_t handle;
+	handle = CreateFile(filename, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
+	return handle;
+}
+
+
 //! Returns true if success
 static bool close_file(file_handle_t handle) {
 	return CloseHandle(handle);
+}
+
+static bool delete_file(const char* filename) {
+	return DeleteFile(filename);
+}
+
+
+bool get_temp_filename(char* buff, const char prefix[]) {
+	char dest_path[MAX_PATH];
+	auto dwRetVal = GetTempPath(MAX_PATH,  // length of the buffer
+		dest_path); // buffer for path 
+	if (dwRetVal > MAX_PATH || (dwRetVal == 0))
+	{
+		return false;
+	}
+	dwRetVal = GetTempFileName(dest_path, // directory for tmp files
+		prefix,     // temp file name prefix -- 3 bytes used only
+		0,                // create unique name 
+		buff);  // buffer for name 
+	if (dwRetVal == 0) {
+		return false;
+	}
+	return true;
 }
 
 //! Returns true if success
@@ -516,7 +546,8 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	DWORD attributes;
 	FILETIME LocTime, GlobTime;
 
-	if (Operation == PK_SKIP || Operation == PK_TEST) return 0;
+	//if (Operation == PK_SKIP || Operation == PK_TEST) return 0;
+	if (Operation == PK_SKIP ) return 0;
 
 
 	if( arch->counter == 0 ) 
@@ -524,8 +555,16 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 
 	// if (newentry->FileAttr & ATTR_DIRECTORY) return 0;
 
-	if (DestPath) strcpy(dest, DestPath);
-	if (DestName) strcat(dest, DestName);
+	if (Operation == PK_TEST) {
+		auto res = get_temp_filename(dest, "FIM");		
+		if (!res) {
+			return E_ECREATE;
+		}
+	}
+	else {
+		if (DestPath) strcpy(dest, DestPath);
+		if (DestName) strcat(dest, DestName);
+	}
 
 	std::unique_ptr<char[]> buff;
 	try {
@@ -535,7 +574,12 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 		return E_NO_MEMORY;
 	}
 
-	hUnpFile = open_file_write(dest);
+	if (Operation == PK_TEST) {
+		hUnpFile = open_file_overwrite(dest);
+	}
+	else {
+		hUnpFile = open_file_write(dest);
+	}
 	if (hUnpFile == file_open_error_v) 
 		return E_ECREATE;
 
@@ -579,6 +623,10 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	SetFileTime(hUnpFile, nullptr, nullptr, &GlobTime);
 
 	close_file(hUnpFile);
+
+	if (Operation == PK_TEST) {
+		delete_file(dest);
+	}
 
 	// set file attributes
 	attributes = FILE_ATTRIBUTE_NORMAL;
