@@ -21,6 +21,7 @@
 #include <new>
 #include <memory>
 #include <cstddef>
+#include <vector>
 using std::nothrow, std::uint8_t;
 
 // The DLL entry point
@@ -79,7 +80,7 @@ struct tFAT12Table
 #pragma pack(pop)
 
 #pragma pack(push, 1)
-struct tFAT12DirEntry
+struct FATxx_dir_entry_t
 {
 	char  DIR_Name[11];
 	uint8_t  DIR_Attr;
@@ -96,7 +97,7 @@ struct tFAT12DirEntry
 };
 #pragma pack(pop)
 
-static_assert(sizeof(tFAT12DirEntry) == 32, "Wrong size of tFAT12DirEntry"); //-V112
+static_assert(sizeof(FATxx_dir_entry_t) == 32, "Wrong size of FATxx_dir_entry_t"); //-V112
 
 enum file_attr_t{ 
 	ATTR_READONLY  = 0x01,
@@ -110,48 +111,9 @@ enum file_attr_t{
 
 //--------End of  FAT12 Definitions-------------
 
-//----------------IMG Definitions-------------
-
-struct tDirEntry
-{
-	char FileName[260];
-	char PathName[260];
-	unsigned FileSize;
-	unsigned FileTime;
-	unsigned FileAttr;
-	uint32_t FirstClus;
-	tDirEntry* next;
-	tDirEntry* prev;
-};
-
-using file_handle_t = HANDLE;
-struct tArchive
-{
-	char archname[MAX_PATH];
-	file_handle_t hArchFile;    //opened file handle
-
-	tFAT12Table* fattable;
-	tDirEntry* entrylist;
-	tFAT12BootSec* bootsec;
-
-	size_t rootarea_ptr; //number of uint8_t before root area
-	size_t dataarea_ptr; //number of uint8_t before data area
-	uint32_t rootentcnt;
-	uint32_t fatsize;// in sectors
-	uint32_t cluster_size; // in uint8_ts
-	uint32_t counter;
-
-	tChangeVolProc pLocChangeVol;
-	tProcessDataProc pLocProcessData;
-};
-
-using myHANDLE = tArchive*;
-
-//--------End of  IMG Definitions-------------
-
-//------------------=[ "Kernel" ]=-------------
-
+//----------------I/O functions ---------------
 static const auto file_open_error_v = INVALID_HANDLE_VALUE;
+using file_handle_t = HANDLE;
 
 static file_handle_t open_file_shared_read(const char* filename) {
 	file_handle_t handle;
@@ -200,6 +162,50 @@ static size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t si
 		return static_cast<size_t>(result);
 	}
 }
+//----------------IMG Definitions-------------
+
+struct tDirEntry
+{
+	char FileName[260];
+	char PathName[260];
+	unsigned FileSize;
+	unsigned FileTime;
+	unsigned FileAttr;
+	uint32_t FirstClus;
+	tDirEntry* next;
+	tDirEntry* prev;
+};
+
+struct tArchive
+{
+	char archname[MAX_PATH]{ '\0' }; // All set to 0
+	file_handle_t hArchFile = file_handle_t();    //opened file handle
+
+	std::vector<uint8_t> fattable;
+	tDirEntry* entrylist = nullptr;
+	tFAT12BootSec bootsec{};
+
+	size_t rootarea_off = 0; //number of uint8_t before root area 
+	size_t dataarea_off = 0; //number of uint8_t before data area
+	uint32_t rootentcnt = 0;
+	uint32_t sectors_in_FAT = 0; 
+	uint32_t cluster_size = 0; 
+	uint32_t counter = 0;
+
+	tChangeVolProc   pLocChangeVol   = nullptr;
+	tProcessDataProc pLocProcessData = nullptr;
+
+	~tArchive() {
+		if (hArchFile)
+			close_file(hArchFile);
+	}
+};
+
+using myHANDLE = tArchive*;
+
+//--------End of  IMG Definitions-------------
+
+//------------------=[ "Kernel" ]=-------------
 
 #define AT_OK      0
 #define AT_VOL     1
@@ -219,7 +225,7 @@ DWORD DIR_AttrToFileAttr(uint8_t DIR_Attr, unsigned* FileAttr)
 
 int ValidChar(char mychar)
 {
-	const char nonValid[] = R"("*+,./:;<=>?[\]|)";
+	static constexpr char nonValid[] = R"("*+,./:;<=>?[\]|)";
 
 	return !((mychar >= '\x00') && (mychar <= '\x20')) &&  
 		strchr(nonValid, mychar) == nullptr;
@@ -258,34 +264,34 @@ DWORD DIR_NameToFileName(const char* DIR_Name, char* FileName)
 	return DN_OK;
 }
 
-DWORD NextClus(DWORD firstclus, const tArchive* arch)
+size_t next_cluster_FAT12(size_t firstclus, const tArchive* arch)
 {
-	const auto FAT_byte_pre = arch->fattable->data + ((firstclus * 3) >> 1); // firstclus + firstclus/2
+	const auto FAT_byte_pre = arch->fattable.data() + ((firstclus * 3) >> 1); // firstclus + firstclus/2
 	//! Extract word, containing next cluster:
 	const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
 	// Extract correct 12 bits -- lower for odd, upper for even: 
 	return ( (*word_ptr) >> (( firstclus % 2) ? 4 : 0) ) & 0x0FFF; //-V112
 }
 
-int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD depth)
+int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD depth)
 {
 	tDirEntry* newentry;
-	tFAT12DirEntry* sector = nullptr;
+	FATxx_dir_entry_t* sector = nullptr;
 	DWORD i, j;
 	size_t result;
 	size_t portion_size = 0;
 
 	if (firstclus == 0)
 	{
-		set_file_pointer(arch->hArchFile, arch->rootarea_ptr);
+		set_file_pointer(arch->hArchFile, arch->rootarea_off);
 		portion_size = 512;
 	}
 	else {
-		set_file_pointer(arch->hArchFile, arch->dataarea_ptr + (firstclus - 2) * sector_size); //-V104
+		set_file_pointer(arch->hArchFile, arch->dataarea_off + (firstclus - 2) * sector_size); //-V104
 		portion_size = arch->cluster_size; //-V101
 	}	
-	size_t records_number = portion_size / sizeof(tFAT12DirEntry);
-	sector = new(nothrow) tFAT12DirEntry[records_number];  //-V121
+	size_t records_number = portion_size / sizeof(FATxx_dir_entry_t);
+	sector = new(nothrow) FATxx_dir_entry_t[records_number];  //-V121
 	if (sector == nullptr) goto error;
 	if ((firstclus == 1) || (firstclus >= 0xFF0)) goto error;
 	result = read_file(arch->hArchFile, sector, portion_size);
@@ -339,12 +345,12 @@ int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD dept
 		if ((firstclus == 0) && ((i * records_number) >= arch->rootentcnt)) goto error; //-V104
 		if (firstclus == 0)
 		{
-			set_file_pointer(arch->hArchFile, arch->rootarea_ptr + i * sector_size); //-V104
+			set_file_pointer(arch->hArchFile, arch->rootarea_off + i * sector_size); //-V104
 		}
 		else {
-			firstclus = NextClus(firstclus, arch);
+			firstclus = next_cluster_FAT12(firstclus, arch);
 			if ((firstclus <= 1) || (firstclus >= 0xFF0)) goto error;
-			set_file_pointer(arch->hArchFile, arch->dataarea_ptr + static_cast<size_t>(firstclus - 2) * portion_size); 
+			set_file_pointer(arch->hArchFile, arch->dataarea_off + static_cast<size_t>(firstclus - 2) * portion_size); 
 		}
 		result = read_file(arch->hArchFile, sector, portion_size);
 		if (result != portion_size) goto error;
@@ -357,50 +363,54 @@ error:
 
 myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 {
-	tArchive* arch = nullptr;
+	std::unique_ptr<tArchive> arch; // Looks like TCmd API expects HANDLE/raw pointer,
+									// so smart pointer is used to manage cleanup on errors 
+									// only inside this function
 	size_t result;
 
+	//! Not used by TCmd yet.
 	ArchiveData->CmtBuf = 0;
 	ArchiveData->CmtBufSize = 0;
 	ArchiveData->CmtSize = 0;
 	ArchiveData->CmtState = 0;
 
 	ArchiveData->OpenResult = E_NO_MEMORY;// default error type
-	if ((arch = new(nothrow) tArchive) == nullptr)
-	{
+	try {
+		arch = std::make_unique<tArchive>();
+	}
+	catch (std::bad_alloc&) {
 		return nullptr;
 	}
 
 	// trying to open
-	memset(arch, 0, sizeof(tArchive));
-	strcpy(arch->archname, ArchiveData->ArcName);
+	auto errcode = strcpy_s(arch->archname, sizeof(arch->archname), ArchiveData->ArcName);
+	if (errcode != 0) {
+		return nullptr;
+	}
 	
 	arch->hArchFile = open_file_shared_read(arch->archname);
 	if (arch->hArchFile == file_open_error_v)
 	{
-		goto error;
+		return nullptr;
 	}
 
 	//----------begin of bootsec in use
-	if ((arch->bootsec = new(nothrow) tFAT12BootSec) == nullptr)
-	{
-		goto error;
-	}
-	result = read_file(arch->hArchFile, arch->bootsec, sector_size);
+	result = read_file(arch->hArchFile, &(arch->bootsec), sector_size);
 	if (result != sector_size)
 	{
 		ArchiveData->OpenResult = E_EREAD;
-		goto error;
+		return nullptr;
 	}
 
-	if (arch->bootsec->BPB_bytesPerSec != sector_size)
+	if (arch->bootsec.BPB_bytesPerSec != sector_size)
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
-		goto error;
+		return nullptr;
 	}
 
-	if ( arch->bootsec->signature != 0xAA55	)
+	if ( arch->bootsec.signature != 0xAA55 && ArchiveData->OpenMode == PK_OM_LIST)
 	{
+		//! Dialog only while listing
 		//! Is it correct to create own dialogs in plugin?
 		int msgboxID = MessageBoxEx(
 			NULL,
@@ -411,17 +421,17 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 		);
 		if (msgboxID == IDCANCEL) {
 			ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
-			goto error;
+			return nullptr;
 		}
 	}
 
-	arch->fatsize = arch->bootsec->BPB_SectorsPerFAT;
-	if ((arch->fatsize < 1) || (arch->fatsize > 12))
+	arch->sectors_in_FAT = arch->bootsec.BPB_SectorsPerFAT;
+	if ((arch->sectors_in_FAT < 1) || (arch->sectors_in_FAT > 12))
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
-		goto error;
+		return nullptr;
 	}
-	arch->rootentcnt = arch->bootsec->BPB_RootEntCnt;
+	arch->rootentcnt = arch->bootsec.BPB_RootEntCnt;
 	//224 is the maximum in a 1.44 floppy
 	// But 2.88 disk exists
 	//! TODO: Warn for too large or too small numbers
@@ -431,27 +441,31 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
 		goto error;
 	}*/
-	arch->cluster_size = 512 * arch->bootsec->BPB_SecPerClus;
-	arch->rootarea_ptr = (1 + arch->fatsize * arch->bootsec->BPB_NumFATs) * 512;
-	arch->dataarea_ptr = arch->rootarea_ptr + arch->rootentcnt * sizeof(tFAT12DirEntry); 
-	//----------end of bootsec in use
-
-	// trying to read fat table
-	if ((arch->fattable = new(nothrow) tFAT12Table) == nullptr)
-	{
-		goto error;
+	arch->cluster_size = 512 * arch->bootsec.BPB_SecPerClus;
+	arch->rootarea_off = sector_size * (arch->bootsec.BPB_RsvdSecCnt +
+		        arch->sectors_in_FAT * static_cast<size_t>(arch->bootsec.BPB_NumFATs));
+	arch->dataarea_off = arch->rootarea_off + arch->rootentcnt * sizeof(FATxx_dir_entry_t); 
+	const size_t fat_size_bytes = arch->sectors_in_FAT * sector_size;
+	try {
+		arch->fattable.reserve(fat_size_bytes); // To minimize overcommit
+		arch->fattable.resize(fat_size_bytes);
 	}
-	result = read_file(arch->hArchFile, arch->fattable, arch->fatsize * sector_size);
-	if (result != arch->fatsize * sector_size)
+	catch (std::exception&) { // std::length_error, std::bad_alloc, other can be used by custom allocators
+		ArchiveData->OpenResult = E_NO_MEMORY;
+		return nullptr;
+	}
+	// trying to read fat table
+	result = read_file(arch->hArchFile, arch->fattable.data(), arch->sectors_in_FAT * sector_size);
+	if (result != arch->sectors_in_FAT * sector_size)
 	{
 		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
-		goto error;
+		return nullptr;
 	}
 
 	// trying to read root directory
 	arch->counter = 0;
 	arch->entrylist = nullptr;
-	CreateFileList("", 0, arch, 0);
+	CreateFileList("", 0, arch.get(), 0);
 	if (arch->entrylist != nullptr)
 	{
 		while (arch->entrylist->prev != nullptr)
@@ -461,15 +475,7 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	}
 
 	ArchiveData->OpenResult = 0;// ok
-	return arch;
-
-error:
-	// memory must be freed
-	if (arch->hArchFile != nullptr) close_file(arch->hArchFile); 
-	delete arch->fattable;
-	delete arch->bootsec;
-	delete arch;
-	return nullptr;
+	return arch.release(); // Returns raw ptr and releases ownership 
 };
 
 int IMG_NextItem(myHANDLE hArcData, tHeaderData* HeaderData)
@@ -557,7 +563,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 			close_file(hUnpFile);
 			return E_UNKNOWN_FORMAT;
 		}
-		set_file_pointer(arch->hArchFile, arch->dataarea_ptr + static_cast<size_t>(nextclus - 2) * arch->cluster_size); //-V104
+		set_file_pointer(arch->hArchFile, arch->dataarea_off + static_cast<size_t>(nextclus - 2) * arch->cluster_size); //-V104
 		towrite = (remaining > arch->cluster_size) ? (arch->cluster_size) : (remaining); //-V101
 		size_t result = read_file(arch->hArchFile, buff.get(), towrite);
 		if (result != towrite)
@@ -574,7 +580,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 		if (remaining > arch->cluster_size) { remaining -= arch->cluster_size; }
 		else { remaining = 0; }
 
-		nextclus = NextClus(nextclus, arch);
+		nextclus = next_cluster_FAT12(nextclus, arch);
 		i++;
 	}
 
@@ -609,9 +615,6 @@ int IMG_Close(myHANDLE hArcData)
 		delete arch->entrylist;
 		arch->entrylist = newentry;
 	}
-
-	close_file(arch->hArchFile);
-	delete arch->fattable;
 	delete arch;
 
 	return 0;// ok
