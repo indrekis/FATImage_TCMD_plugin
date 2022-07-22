@@ -22,6 +22,7 @@
 #include <memory>
 #include <cstddef>
 #include <vector>
+#include <cassert>
 using std::nothrow, std::uint8_t;
 
 // The DLL entry point
@@ -47,7 +48,7 @@ struct tFAT12BootSec
 	uint8_t  BS_OEMName[8];
 	uint16_t BPB_bytesPerSec; 
 	uint8_t  BPB_SecPerClus;
-	uint16_t BPB_RsvdSecCnt;  // TODO: use this value too, 1 or more -- boot is included
+	uint16_t BPB_RsvdSecCnt;  
 	uint8_t  BPB_NumFATs;	  // Often 1 or 2
 	uint16_t BPB_RootEntCnt;
 	uint16_t BPB_TotSec16;    // 0 if more than 65535 -- then val in. BPB_TotSec32
@@ -168,7 +169,7 @@ static uint32_t combine(uint16_t hi, uint16_t lo) {
 }
 //----------------IMG Definitions-------------
 
-struct tDirEntry
+struct arc_dir_entry_t
 {
 	char FileName[260];
 	char PathName[260];
@@ -176,8 +177,6 @@ struct tDirEntry
 	unsigned FileTime;
 	unsigned FileAttr;
 	uint32_t FirstClus;
-	tDirEntry* next;
-	tDirEntry* prev;
 };
 
 struct tArchive
@@ -186,7 +185,7 @@ struct tArchive
 	file_handle_t hArchFile = file_handle_t();    //opened file handle
 
 	std::vector<uint8_t> fattable;
-	tDirEntry* entrylist = nullptr;
+	std::vector<arc_dir_entry_t> arc_dir_entries;
 	tFAT12BootSec bootsec{};
 
 	size_t rootarea_off = 0; //number of uint8_t before root area 
@@ -217,9 +216,8 @@ using myHANDLE = tArchive*;
 #define AT_LONG    3
 #define AT_INVALID 4
 
-DWORD DIR_AttrToFileAttr(uint8_t DIR_Attr, unsigned* FileAttr)
+DWORD DIR_AttrToFileAttr(uint8_t DIR_Attr) 
 {
-	(*FileAttr) = (unsigned)DIR_Attr;
 	if (DIR_Attr == ATTR_VOLUME_ID) return AT_VOL;
 	if (DIR_Attr == ATTR_LONG_NAME) return AT_LONG;
 	if ((DIR_Attr & 0xC8) != 0) return AT_INVALID;
@@ -235,37 +233,50 @@ int ValidChar(char mychar)
 		strchr(nonValid, mychar) == nullptr;
 }
 
-#define DN_OK      0
-#define DN_DELETED 1
-#define DN_FREE    2 // indicates that all the others are free too
-#define DN_UNKNOWN 3
+enum dir_entry_name_types_t { 
+	DN_OK      = 0,
+	DN_DELETED = 1,
+	DN_FREE    = 2, // indicates that all next entries are free too, (DOS 2.0+)
+	DN_UNKNOWN = 3,
+};
 
-DWORD DIR_NameToFileName(const char* DIR_Name, char* FileName)
-{
-	int i = 0, j = 0;
-
+dir_entry_name_types_t get_dir_entry_type(const char* DIR_Name) {
 	if (DIR_Name[0] == char(0x00)) return DN_FREE;
 	if (DIR_Name[0] == char(0xE5)) return DN_DELETED;
-	if (DIR_Name[0] == char(0x05)) // because 0xE5 used in Japan
-	{
-		FileName[i++] = char(0xE5);
+	if (DIR_Name[0] == char(0x05)) return DN_DELETED;
+	if (!ValidChar(DIR_Name[0]))   return DN_UNKNOWN;
+	return DN_OK;
+}
+
+//! Returns number of invalid chars
+uint32_t dir_entry_name_to_cstr(const char* DIR_Name, char* name, size_t name_size) {
+	// if (DIR_Name[0] == char(0x05)) // because 0xE5 used in Japan
+	//		FileName[i++] = char(0xE5);
+	uint32_t i = 0, invalid = 0;
+
+	for (; i < 8; ++i) {
+		assert(name_size > i);
+		if (!ValidChar(DIR_Name[i])) {
+			if(DIR_Name[i] != ' ') ++invalid;
+			break;
+		}
+		name[i] = DIR_Name[i];
 	}
-	while ((i < 8) && ValidChar(DIR_Name[i]))
-	{
-		FileName[i] = DIR_Name[i];
-		i++;
-	}
+	assert(name_size > i); //-V104
 	if (ValidChar(DIR_Name[8]))
 	{
-		FileName[i++] = '.';
-		while ((j < 3) && ValidChar(DIR_Name[j + 8]))
-		{
-			FileName[i++] = DIR_Name[j++ + 8];
-		}
+		name[i++] = '.';
 	}
-	FileName[i] = 0;
-	if (i == 0) return DN_UNKNOWN;
-	return DN_OK;
+	for (uint32_t j = 0; j < 3; ++j) {
+		if (!ValidChar(DIR_Name[j + 8])) {
+			if (DIR_Name[j + 8] != ' ') ++invalid;
+			break;
+		}
+		assert(name_size > i); //-V104
+		name[i++] = DIR_Name[j + 8];
+	}
+	name[i] = '\0';
+	return invalid;
 }
 
 size_t next_cluster_FAT12(size_t firstclus, const tArchive* arch)
@@ -278,13 +289,8 @@ size_t next_cluster_FAT12(size_t firstclus, const tArchive* arch)
 }
 
 int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD depth)
-{
-	tDirEntry* newentry;
-	FATxx_dir_entry_t* sector = nullptr;
-	size_t i, j;
-	size_t result;
+{		
 	size_t portion_size = 0;
-
 	if (firstclus == 0)
 	{   // Read whole dir at once
 		set_file_pointer(arch->hArchFile, arch->rootarea_off);
@@ -295,68 +301,71 @@ int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD dep
 		portion_size = arch->cluster_size;  //-V101
 	}	
 	size_t records_number = portion_size / sizeof(FATxx_dir_entry_t);
-	sector = new(nothrow) FATxx_dir_entry_t[records_number];  //-V121
-	if (sector == nullptr) goto error;
-	if ((firstclus == 1) || (firstclus >= 0xFF0)) goto error;
-	result = read_file(arch->hArchFile, sector, portion_size);
-	if (result != portion_size) goto error;
+	std::unique_ptr<FATxx_dir_entry_t[]> sector = std::make_unique<FATxx_dir_entry_t[]>(records_number);
 
-	i = 1;
+	if (sector == nullptr) { return 0; }
+	if ((firstclus == 1) || (firstclus >= 0xFF0)) { return 0; }
+	size_t result = read_file(arch->hArchFile, sector.get(), portion_size);
+	if (result != portion_size) { return 0; }
+
 	do {
-		j = 0;
-		while ((j < records_number) && (sector[j].DIR_Name[0] != char(0x00))) //-V112
+		size_t entry_in_cluster = 0;
+		while ((entry_in_cluster < records_number) && (sector[entry_in_cluster].DIR_Name[0] != char(0x00))) 
 		{
-			if ((newentry = new(nothrow) tDirEntry) == NULL) goto error;
-			switch (DIR_AttrToFileAttr(sector[j].DIR_Attr, &newentry->FileAttr))
+			switch (get_dir_entry_type(sector[entry_in_cluster].DIR_Name))
+			{
+			case DN_UNKNOWN:
+			case DN_DELETED: { entry_in_cluster++; continue; };
+			}
+
+			switch (DIR_AttrToFileAttr(sector[entry_in_cluster].DIR_Attr))
 			{
 			case AT_LONG:
 			case AT_VOL:
-			case AT_INVALID: {delete newentry; j++; continue; };
+			case AT_INVALID: { entry_in_cluster++; continue; };
 			}
-			switch (DIR_NameToFileName(sector[j].DIR_Name, newentry->FileName))
-			{
-			case DN_UNKNOWN:
-			case DN_DELETED: {delete newentry; j++; continue; };
+			arch->arc_dir_entries.emplace_back();
+			auto& newentryref = arch->arc_dir_entries.back();
+			newentryref.FileAttr = sector[entry_in_cluster].DIR_Attr;
+			auto invalid_chars = dir_entry_name_to_cstr(sector[entry_in_cluster].DIR_Name, 
+				newentryref.FileName, sizeof(newentryref.FileName)); // TODO: check invalid chars counter
+			newentryref.PathName[0] = '\0';
+			if ( root[0] != '\0') // If not empty
+			{	// TODO: errors handling
+				strcpy_s(newentryref.PathName, sizeof(newentryref.PathName)-1, root);
+				strcat(newentryref.PathName, "\\"); // PathName-1 to avoid strcat_s + math
 			}
-			strcpy(newentry->PathName, "");
-			if (strcmp(root, "") != 0)
-			{
-				strcpy(newentry->PathName, root);
-				strcat(newentry->PathName, "\\");
-			}
-			strcat(newentry->PathName, newentry->FileName);
-			newentry->FileTime = combine(sector[j].DIR_WrtDate, sector[j].DIR_WrtTime);
-			newentry->FileSize = sector[j].DIR_FileSize;
-			newentry->FirstClus = combine(sector[j].DIR_FstClusHI, sector[j].DIR_FstClusLO);
-			newentry->next = nullptr;
-			newentry->prev = arch->entrylist;
-			if (arch->entrylist != NULL) arch->entrylist->next = newentry;
-			arch->entrylist = newentry;
+			strcat_s(newentryref.PathName, sizeof(newentryref.PathName), newentryref.FileName);
+			newentryref.FileTime = combine(sector[entry_in_cluster].DIR_WrtDate, sector[entry_in_cluster].DIR_WrtTime);
+			newentryref.FileSize = sector[entry_in_cluster].DIR_FileSize;
+			newentryref.FirstClus = combine(sector[entry_in_cluster].DIR_FstClusHI, sector[entry_in_cluster].DIR_FstClusLO);
 
-			if ((newentry->FileAttr & ATTR_DIRECTORY) &&
-				(newentry->FirstClus < 0xFF0) && (newentry->FirstClus > 0x1)
+			if ((newentryref.FileAttr & ATTR_DIRECTORY) &&
+				(newentryref.FirstClus < 0xFF0) && (newentryref.FirstClus > 0x1)
 				&& (depth <= 100))
 			{
-				CreateFileList(newentry->PathName, newentry->FirstClus, arch, depth + 1);
+				// TODO: Need more elegant fix! 
+				// On vector realocate newentryref.PathName becomes invaluid.
+				char temp_pathname[sizeof(newentryref.PathName)];
+				strcpy_s(temp_pathname, sizeof(newentryref.PathName), newentryref.PathName);
+				CreateFileList(temp_pathname, newentryref.FirstClus, arch, depth + 1);
 			}
-			j++;
+			entry_in_cluster++;
 		}
-		if (j < records_number) goto error; 
+		if (entry_in_cluster < records_number) { return 0; }
 		if (firstclus == 0)
 		{
 			break;
 		}
 		else {
 			firstclus = next_cluster_FAT12(firstclus, arch);
-			if ((firstclus <= 1) || (firstclus >= 0xFF0)) goto error;
-			set_file_pointer(arch->hArchFile, arch->dataarea_off + static_cast<size_t>(firstclus - 2) * portion_size); 
+			if ((firstclus <= 1) || (firstclus >= 0xFF0)) { return 0; }
+			set_file_pointer(arch->hArchFile, arch->dataarea_off + static_cast<size_t>(firstclus - 2) * arch->cluster_size); //-V104
 		}
-		result = read_file(arch->hArchFile, sector, portion_size);
-		if (result != portion_size) goto error;
-		i++;
+		result = read_file(arch->hArchFile, sector.get(), portion_size);
+		if (result != portion_size) { return 0; }
 	} while (true);
-error:
-	delete[] sector;
+
 	return 0;
 }
 
@@ -463,43 +472,26 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 
 	// trying to read root directory
 	arch->counter = 0;
-	arch->entrylist = nullptr;
+	arch->arc_dir_entries.clear();
 	CreateFileList("", 0, arch.get(), 0);
-	if (arch->entrylist != nullptr)
-	{
-		while (arch->entrylist->prev != nullptr)
-		{
-			arch->entrylist = arch->entrylist->prev;
-		}
-	}
+	arch->arc_dir_entries.shrink_to_fit();
 
 	ArchiveData->OpenResult = 0;// ok
 	return arch.release(); // Returns raw ptr and releases ownership 
 };
 
-int IMG_NextItem(myHANDLE hArcData, tHeaderData* HeaderData)
+int IMG_NextItem(myHANDLE arch, tHeaderData* HeaderData)
 {
-	tArchive* arch = (tArchive*)(hArcData);
-	tDirEntry* newentry;
-	DWORD i = 0;
-
-	newentry = arch->entrylist;
-	while ((i < arch->counter) && (newentry != nullptr))
-	{
-		newentry = newentry->next;
-		i++;
-	}
-	if (newentry == nullptr)
-	{
+	if (arch->counter == arch->arc_dir_entries.size()) { //-V104
 		arch->counter = 0;
 		return E_END_ARCHIVE;
 	}
 
 	strcpy(HeaderData->ArcName, arch->archname);
-	strcpy(HeaderData->FileName, newentry->PathName);
-	HeaderData->FileAttr = newentry->FileAttr;
-	HeaderData->FileTime = newentry->FileTime;
-	HeaderData->PackSize = newentry->FileSize;
+	strcpy(HeaderData->FileName, arch->arc_dir_entries[arch->counter].PathName);
+	HeaderData->FileAttr = arch->arc_dir_entries[arch->counter].FileAttr;
+	HeaderData->FileTime = arch->arc_dir_entries[arch->counter].FileTime;
+	HeaderData->PackSize = arch->arc_dir_entries[arch->counter].FileSize;
 	HeaderData->UnpSize = HeaderData->PackSize;
 	HeaderData->CmtBuf = 0;
 	HeaderData->CmtBufSize = 0;
@@ -515,11 +507,10 @@ int IMG_NextItem(myHANDLE hArcData, tHeaderData* HeaderData)
 int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const char* DestName)
 {
 	tArchive* arch = hArcData;
-	tDirEntry* newentry;
 	DWORD i = 0;
 	char dest[260] = "";
 	HANDLE hUnpFile;
-	DWORD nextclus;
+	size_t nextclus;
 	DWORD remaining;
 	size_t towrite;
 	DWORD attributes;
@@ -527,15 +518,11 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 
 	if (Operation == PK_SKIP || Operation == PK_TEST) return 0;
 
-	newentry = arch->entrylist;
-	while ((i < arch->counter - 1) && (newentry != nullptr))
-	{
-		newentry = newentry->next;
-		i++;
-	}
-	if (newentry == nullptr) return E_END_ARCHIVE;
 
-	if (newentry->FileAttr & ATTR_DIRECTORY) return 0;
+	if( arch->counter == 0 ) 
+		return E_END_ARCHIVE;
+
+	// if (newentry->FileAttr & ATTR_DIRECTORY) return 0;
 
 	if (DestPath) strcpy(dest, DestPath);
 	if (DestName) strcat(dest, DestName);
@@ -553,8 +540,9 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 		return E_ECREATE;
 
 	i = 0;
-	nextclus = newentry->FirstClus;
-	remaining = newentry->FileSize;
+	const auto& cur_entry = arch->arc_dir_entries[arch->counter-1];
+	nextclus = cur_entry.FirstClus; //-V101
+	remaining = cur_entry.FileSize;
 	while (remaining > 0)
 	{
 		if ((nextclus <= 1) || (nextclus >= 0xFF0))
@@ -584,8 +572,8 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	}
 
 	// set file time
-	DosDateTimeToFileTime(WORD((DWORD((newentry->FileTime))) >> 16),
-		WORD((DWORD((newentry->FileTime))) & 0xFFFF),
+	DosDateTimeToFileTime(WORD((DWORD((cur_entry.FileTime))) >> 16),
+		WORD((DWORD((cur_entry.FileTime))) & 0xFFFF),
 		&LocTime);
 	LocalFileTimeToFileTime(&LocTime, &GlobTime);
 	SetFileTime(hUnpFile, nullptr, nullptr, &GlobTime);
@@ -594,10 +582,10 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 
 	// set file attributes
 	attributes = FILE_ATTRIBUTE_NORMAL;
-	if (newentry->FileAttr & ATTR_READONLY) attributes |= FILE_ATTRIBUTE_READONLY;
-	if (newentry->FileAttr & ATTR_ARCHIVE) attributes |= FILE_ATTRIBUTE_ARCHIVE;
-	if (newentry->FileAttr & ATTR_HIDDEN) attributes |= FILE_ATTRIBUTE_HIDDEN;
-	if (newentry->FileAttr & ATTR_SYSTEM) attributes |= FILE_ATTRIBUTE_SYSTEM;
+	if (cur_entry.FileAttr & ATTR_READONLY) attributes |= FILE_ATTRIBUTE_READONLY;
+	if (cur_entry.FileAttr & ATTR_ARCHIVE) attributes |= FILE_ATTRIBUTE_ARCHIVE;
+	if (cur_entry.FileAttr & ATTR_HIDDEN) attributes |= FILE_ATTRIBUTE_HIDDEN;
+	if (cur_entry.FileAttr & ATTR_SYSTEM) attributes |= FILE_ATTRIBUTE_SYSTEM;
 	SetFileAttributes(dest, attributes);
 
 	return 0;//ok
@@ -605,17 +593,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 
 int IMG_Close(myHANDLE hArcData)
 {
-	tArchive* arch = hArcData;
-	tDirEntry* newentry;
-
-	while (arch->entrylist != nullptr)
-	{
-		newentry = arch->entrylist->next;
-		delete arch->entrylist;
-		arch->entrylist = newentry;
-	}
-	delete arch;
-
+	delete hArcData;
 	return 0;// ok
 };
 
