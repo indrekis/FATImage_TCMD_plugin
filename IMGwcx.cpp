@@ -281,7 +281,7 @@ int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD dep
 {
 	tDirEntry* newentry;
 	FATxx_dir_entry_t* sector = nullptr;
-	DWORD i, j;
+	size_t i, j;
 	size_t result;
 	size_t portion_size = 0;
 
@@ -291,8 +291,8 @@ int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD dep
 		portion_size = arch->dataarea_off - arch->rootarea_off; // Size of root dir
 	}
 	else {
-		set_file_pointer(arch->hArchFile, arch->dataarea_off + (firstclus - 2) * sector_size); //-V104
-		portion_size = arch->cluster_size; 
+		set_file_pointer(arch->hArchFile, arch->dataarea_off + (firstclus - 2) * arch->cluster_size); //-V104
+		portion_size = arch->cluster_size;  //-V101
 	}	
 	size_t records_number = portion_size / sizeof(FATxx_dir_entry_t);
 	sector = new(nothrow) FATxx_dir_entry_t[records_number];  //-V121
