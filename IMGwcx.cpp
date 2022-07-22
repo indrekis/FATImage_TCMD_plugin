@@ -95,7 +95,7 @@ typedef struct
 	uint8_t  DIR_WrtTime[2];
 	uint8_t  DIR_WrtDate[2];
 	uint8_t  DIR_FstClusLO[2];
-	uint8_t  DIR_FileSize[4]; //-V112
+	uint32_t DIR_FileSize;
 } tFAT12DirEntry;
 #pragma pack(pop)
 
@@ -336,10 +336,7 @@ int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD dept
 				((DWORD)sector[j].DIR_WrtDate[0] << 16) +
 				((DWORD)sector[j].DIR_WrtTime[1] << 8) +
 				(DWORD)sector[j].DIR_WrtTime[0];
-			newentry->FileSize = ((DWORD)sector[j].DIR_FileSize[3] << 24) +
-				((DWORD)sector[j].DIR_FileSize[2] << 16) +
-				((DWORD)sector[j].DIR_FileSize[1] << 8) +
-				(DWORD)sector[j].DIR_FileSize[0];
+			newentry->FileSize = sector[j].DIR_FileSize;
 			newentry->FirstClus = ((DWORD)sector[j].DIR_FstClusLO[1] << 8) +
 				(DWORD)sector[j].DIR_FstClusLO[0];
 			newentry->next = nullptr;
