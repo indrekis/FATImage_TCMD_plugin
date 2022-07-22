@@ -13,9 +13,8 @@
 * hesitate to send me an email.
 */
 
-#pragma pvs(disable: 2005,2001,303)
+#pragma pvs(disable: 2005)
 // 2005 -- C casts
-// 2001, 303 -- about deprecated functions, like SetFilePointer/SetFilePointerEx
 
 #include "stdafx.h"
 #include "wcxhead.h"
@@ -91,10 +90,10 @@ typedef struct
 	uint16_t DIR_CrtTime;	// TODO: Use it too
 	uint16_t DIR_CrtDate;	// TODO: Use it too
 	uint16_t DIR_LstAccDate;
-	uint8_t  DIR_FstClusHI[2];
+	uint16_t DIR_FstClusHI;
 	uint16_t DIR_WrtTime;
 	uint16_t DIR_WrtDate;
-	uint8_t  DIR_FstClusLO[2];
+	uint16_t DIR_FstClusLO;
 	uint32_t DIR_FileSize;
 } tFAT12DirEntry;
 #pragma pack(pop)
@@ -121,7 +120,7 @@ typedef struct tDirEntry
 	unsigned FileSize;
 	unsigned FileTime;
 	unsigned FileAttr;
-	DWORD FirstClus;
+	uint32_t FirstClus;
 	tDirEntry* next;
 	tDirEntry* prev;
 } tDirEntry;
@@ -150,12 +149,6 @@ typedef struct
 typedef tArchive* myHANDLE;
 
 //--------End of  IMG Definitions-------------
-
-//------------------=[ Global Varailables ]=-------------
-
-// tChangeVolProc pGlobChangeVol;
-// tProcessDataProc pGlobProcessData;
-
 
 //------------------=[ "Kernel" ]=-------------
 
@@ -188,7 +181,7 @@ static bool set_file_pointer(file_handle_t handle, size_t offset) {
 static size_t read_file(file_handle_t handle, void* buffer_ptr, size_t size) {
 	bool res;
 	DWORD result = 0;
-	res = ReadFile(handle, buffer_ptr, static_cast<DWORD>(size), &result, nullptr);
+	res = ReadFile(handle, buffer_ptr, static_cast<DWORD>(size), &result, nullptr); //-V2001
 	if (!res) {
 		return static_cast<size_t>(-1);
 	}
@@ -200,7 +193,7 @@ static size_t read_file(file_handle_t handle, void* buffer_ptr, size_t size) {
 static size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t size) {
 	bool res;
 	DWORD result = 0;
-	res = WriteFile(handle, buffer_ptr, static_cast<DWORD>(size), &result, nullptr);
+	res = WriteFile(handle, buffer_ptr, static_cast<DWORD>(size), &result, nullptr); //-V2001
 	if (!res) {
 		return static_cast<size_t>(-1);
 	}
@@ -272,7 +265,7 @@ DWORD NextClus(DWORD firstclus, const tArchive* arch)
 	//! Extract word, containing next cluster:
 	const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
 	// Extract correct 12 bits -- lower for odd, upper for even: 
-	return ( (*word_ptr) >> (( firstclus % 2) ? 4 : 0) ) & 0x0FFF;
+	return ( (*word_ptr) >> (( firstclus % 2) ? 4 : 0) ) & 0x0FFF; //-V112
 }
 
 int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD depth)
@@ -327,8 +320,9 @@ int CreateFileList(const char* root, DWORD firstclus, tArchive* arch, DWORD dept
 				(static_cast<uint32_t>(sector[j].DIR_WrtDate) << 16) +
 				                       sector[j].DIR_WrtTime;
 			newentry->FileSize = sector[j].DIR_FileSize;
-			newentry->FirstClus = ((DWORD)sector[j].DIR_FstClusLO[1] << 8) +
-				(DWORD)sector[j].DIR_FstClusLO[0];
+			newentry->FirstClus = 
+				(static_cast<uint32_t>(sector[j].DIR_FstClusHI) << 16) +
+				sector[j].DIR_FstClusLO;
 			newentry->next = nullptr;
 			newentry->prev = arch->entrylist;
 			if (arch->entrylist != NULL) arch->entrylist->next = newentry;
@@ -409,11 +403,12 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	if ( arch->bootsec->signature != 0xAA55	)
 	{
 		//! Is it correct to create own dialogs in plugin?
-		int msgboxID = MessageBox(
+		int msgboxID = MessageBoxEx(
 			NULL,
 			TEXT("Wrong BPB signature\nContinue?"),
 			TEXT("BPB Signature error"),
-			MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1
+			MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1, 
+			0
 		);
 		if (msgboxID == IDCANCEL) {
 			ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
