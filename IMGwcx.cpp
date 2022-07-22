@@ -643,7 +643,7 @@ myHANDLE __stdcall OpenArchive(tOpenArchiveData* ArchiveData)
 	return IMG_Open(ArchiveData);
 }
 
-// WinCmd calls ReadHeader to find out what files are in the archive
+// TCmd calls ReadHeader to find out what files are in the archive
 int __stdcall ReadHeader(myHANDLE hArcData, tHeaderData* HeaderData)
 {
 	return IMG_NextItem(hArcData, HeaderData);

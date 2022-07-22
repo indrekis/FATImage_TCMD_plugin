@@ -1,4 +1,4 @@
-//Microsoft Developer Studio generated resource script.
+// Microsoft Visual C++ generated resource script.
 //
 #include "resource.h"
 
@@ -13,23 +13,20 @@
 #undef APSTUDIO_READONLY_SYMBOLS
 
 /////////////////////////////////////////////////////////////////////////////
-// English (U.S.) resources
+// English (United States) resources
 
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
-#ifdef _WIN32
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 #pragma code_page(1252)
-#endif //_WIN32
 
-#ifndef _MAC
 /////////////////////////////////////////////////////////////////////////////
 //
 // Version
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,9,0,0
- PRODUCTVERSION 0,9,0,0
+ FILEVERSION 0,9,9,0
+ PRODUCTVERSION 0,9,9,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x29L
@@ -44,18 +41,18 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "Comments", "1.44 Floppy image unpacking plugin for Windows Commander\0"
-            VALUE "CompanyName", "IvGzury Soft\0"
-            VALUE "FileDescription", "IMG plugin for Windows Commander\0"
-            VALUE "FileVersion", "0.9\0"
-            VALUE "InternalName", "N/A\0"
-            VALUE "LegalCopyright", "Copyright © 2002 by IvGzury\0"
-            VALUE "LegalTrademarks", "N/A\0"
-            VALUE "OriginalFilename", "img.wcx\0"
-            VALUE "PrivateBuild", "N/A\0"
-            VALUE "ProductName", "WinCmd IMG plugin\0"
-            VALUE "ProductVersion", "0.9 beta\0"
-            VALUE "SpecialBuild", "N/A\0"
+            VALUE "Comments", "1.44 Floppy image unpacking plugin for Windows Commander"
+            VALUE "CompanyName", "Indrekis"
+            VALUE "FileDescription", "FDD images wcx plugin for Windows Commander"
+            VALUE "FileVersion", "0.9.9.0"
+            VALUE "InternalName", "N/A"
+            VALUE "LegalCopyright", "Copyright © 2022 by Oleg Farenyuk, 2002 by IvGzury"
+            VALUE "LegalTrademarks", "N/A"
+            VALUE "OriginalFilename", "img.wcx64"
+            VALUE "PrivateBuild", "N/A"
+            VALUE "ProductName", "TCmd FDD images wcx plugin"
+            VALUE "ProductVersion", "0.99 beta"
+            VALUE "SpecialBuild", "N/A"
         END
     END
     BLOCK "VarFileInfo"
@@ -64,8 +61,6 @@ BEGIN
     END
 END
 
-#endif    // !_MAC
-
 
 #ifdef APSTUDIO_INVOKED
 /////////////////////////////////////////////////////////////////////////////
@@ -73,18 +68,18 @@ END
 // TEXTINCLUDE
 //
 
-1 TEXTINCLUDE DISCARDABLE 
+1 TEXTINCLUDE 
 BEGIN
     "resource.h\0"
 END
 
-2 TEXTINCLUDE DISCARDABLE 
+2 TEXTINCLUDE 
 BEGIN
     "#include ""afxres.h""\r\n"
     "\0"
 END
 
-3 TEXTINCLUDE DISCARDABLE 
+3 TEXTINCLUDE 
 BEGIN
     "\r\n"
     "\0"
@@ -92,7 +87,7 @@ END
 
 #endif    // APSTUDIO_INVOKED
 
-#endif    // English (U.S.) resources
+#endif    // English (United States) resources
 /////////////////////////////////////////////////////////////////////////////
 
 

@@ -289,10 +289,10 @@
     <ClInclude Include="wcxhead.h" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="Script1.rc" />
+    <Text Include="ReadMe.md" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="ReadMe.md" />
+    <ResourceCompile Include="main_resources.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
