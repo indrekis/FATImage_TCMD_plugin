@@ -24,12 +24,10 @@
 using std::nothrow, std::uint8_t;
 
 // The DLL entry point
-
 BOOL APIENTRY DllMain(HANDLE hModule,
 	DWORD  ul_reason_for_call,
 	LPVOID lpReserved
-)
-{
+) {
 	return TRUE;
 }
 
@@ -42,7 +40,7 @@ constexpr size_t sector_size = 512;
 // BPB = BIOS Parameter Block
 // BS = (Extended) Boot Record. Extended BR is also called EBPB 
 #pragma pack(push, 1) // See also __attribute__((packed)) 
-typedef struct
+struct tFAT12BootSec
 {
 	uint8_t  BS_jmpBoot[3];
 	uint8_t  BS_OEMName[8];
@@ -67,21 +65,21 @@ typedef struct
 	uint8_t  BS_FilSysType[8];// "The spec says never to trust the contents of this string for any use."
 	uint8_t  remaining_part[448];
 	uint16_t signature;       // 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
-} tFAT12BootSec;
+};
 #pragma pack(pop)
 
 static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
 static_assert(std::endian::native == std::endian::little, "Wrong endiannes");
 
 #pragma pack(push, 1)
-typedef struct tFAT12Table2
+struct tFAT12Table
 {
 	uint8_t data[12 * sector_size];
-} tFAT12Table;
+} ;
 #pragma pack(pop)
 
 #pragma pack(push, 1)
-typedef struct
+struct tFAT12DirEntry
 {
 	char  DIR_Name[11];
 	uint8_t  DIR_Attr;
@@ -95,25 +93,26 @@ typedef struct
 	uint16_t DIR_WrtDate;
 	uint16_t DIR_FstClusLO;
 	uint32_t DIR_FileSize;
-} tFAT12DirEntry;
+};
 #pragma pack(pop)
 
 static_assert(sizeof(tFAT12DirEntry) == 32, "Wrong size of tFAT12DirEntry"); //-V112
 
-#define ATTR_READONLY     0x01
-#define ATTR_HIDDEN       0x02
-#define ATTR_SYSTEM       0x04
-#define ATTR_VOLUME_ID    0x08
-#define ATTR_DIRECTORY    0x10
-#define ATTR_ARCHIVE      0x20
-#define ATTR_LONG_NAME    0x0F
-
+enum file_attr_t{ 
+	ATTR_READONLY  = 0x01,
+	ATTR_HIDDEN    = 0x02,
+	ATTR_SYSTEM    = 0x04,
+	ATTR_VOLUME_ID = 0x08,
+	ATTR_DIRECTORY = 0x10,
+	ATTR_ARCHIVE   = 0x20,
+	ATTR_LONG_NAME = 0x0F,
+};
 
 //--------End of  FAT12 Definitions-------------
 
 //----------------IMG Definitions-------------
 
-typedef struct tDirEntry
+struct tDirEntry
 {
 	char FileName[260];
 	char PathName[260];
@@ -123,10 +122,10 @@ typedef struct tDirEntry
 	uint32_t FirstClus;
 	tDirEntry* next;
 	tDirEntry* prev;
-} tDirEntry;
+};
 
 using file_handle_t = HANDLE;
-typedef struct
+struct tArchive
 {
 	char archname[MAX_PATH];
 	file_handle_t hArchFile;    //opened file handle
@@ -144,9 +143,9 @@ typedef struct
 
 	tChangeVolProc pLocChangeVol;
 	tProcessDataProc pLocProcessData;
-} tArchive;
+};
 
-typedef tArchive* myHANDLE;
+using myHANDLE = tArchive*;
 
 //--------End of  IMG Definitions-------------
 
