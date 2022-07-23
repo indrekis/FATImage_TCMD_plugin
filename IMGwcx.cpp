@@ -204,8 +204,8 @@ static uint32_t combine(uint16_t hi, uint16_t lo) {
 
 struct arc_dir_entry_t
 {
-	char FileName[260];
-	char PathName[260];
+	char FileName[MAX_PATH];
+	char PathName[MAX_PATH];
 	unsigned FileSize;
 	unsigned FileTime;
 	unsigned FileAttr;
@@ -532,7 +532,7 @@ int IMG_NextItem(myHANDLE arch, tHeaderData* HeaderData)
 int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const char* DestName)
 {
 	tArchive* arch = hArcData;
-	char dest[260] = "";
+	char dest[MAX_PATH] = "";
 	HANDLE hUnpFile;
 	size_t nextclus;
 	DWORD remaining;
