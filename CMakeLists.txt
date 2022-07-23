@@ -7,7 +7,7 @@ project(l17_fixed_string)
 
 set(CMAKE_CXX_STANDARD 20)
 
-set(SOURCE_FILES IMGwcx.cpp StdAfx.cpp resource.h StdAfx.h wcxhead.h main_resources.rc imgwcx.def)
+set(SOURCE_FILES IMGwcx.cpp resource.h wcxhead.h main_resources.rc imgwcx.def)
 
 add_library(IMGwcx64 SHARED ${SOURCE_FILES} )
 set_target_properties(IMGwcx64 PROPERTIES OUTPUT_NAME img)
