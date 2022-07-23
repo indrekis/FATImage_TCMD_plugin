@@ -85,13 +85,6 @@ static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
 static_assert(std::endian::native == std::endian::little, "Wrong endiannes");
 
 #pragma pack(push, 1)
-struct tFAT12Table
-{
-	uint8_t data[12 * sector_size];
-} ;
-#pragma pack(pop)
-
-#pragma pack(push, 1)
 struct FATxx_dir_entry_t
 {
 	char  DIR_Name[11];

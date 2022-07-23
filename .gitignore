@@ -370,3 +370,7 @@ FodyWeavers.xsd
 
 # Local tests folder
 /b
+/b32gcc
+/b64gcc
+/b32msvc
+/b64msvc
