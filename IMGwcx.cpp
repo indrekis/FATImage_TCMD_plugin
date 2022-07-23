@@ -640,38 +640,40 @@ void IMG_SetCallBackProc(myHANDLE hArcData, tProcessDataProc pProcessDataProc)
 
 //-----------------------=[ DLL exports ]=--------------------
 
-// OpenArchive should perform all necessary operations when an archive is to be opened
-myHANDLE __stdcall OpenArchive(tOpenArchiveData* ArchiveData)
-{
-	return IMG_Open(ArchiveData);
-}
+extern "C" {
+	// OpenArchive should perform all necessary operations when an archive is to be opened
+	myHANDLE __stdcall OpenArchive(tOpenArchiveData* ArchiveData)
+	{
+		return IMG_Open(ArchiveData);
+	}
 
-// TCmd calls ReadHeader to find out what files are in the archive
-int __stdcall ReadHeader(myHANDLE hArcData, tHeaderData* HeaderData)
-{
-	return IMG_NextItem(hArcData, HeaderData);
-}
+	// TCmd calls ReadHeader to find out what files are in the archive
+	int __stdcall ReadHeader(myHANDLE hArcData, tHeaderData* HeaderData)
+	{
+		return IMG_NextItem(hArcData, HeaderData);
+	}
 
-// ProcessFile should unpack the specified file or test the integrity of the archive
-int __stdcall ProcessFile(myHANDLE hArcData, int Operation, char* DestPath, char* DestName) //-V2009
-{
-	return IMG_Process(hArcData, Operation, DestPath, DestName);
-}
+	// ProcessFile should unpack the specified file or test the integrity of the archive
+	int __stdcall ProcessFile(myHANDLE hArcData, int Operation, char* DestPath, char* DestName) //-V2009
+	{
+		return IMG_Process(hArcData, Operation, DestPath, DestName);
+	}
 
-// CloseArchive should perform all necessary operations when an archive is about to be closed
-int __stdcall CloseArchive(myHANDLE hArcData)
-{
-	return IMG_Close(hArcData);
-}
+	// CloseArchive should perform all necessary operations when an archive is about to be closed
+	int __stdcall CloseArchive(myHANDLE hArcData)
+	{
+		return IMG_Close(hArcData);
+	}
 
-// This function allows you to notify user about changing a volume when packing files
-void __stdcall SetChangeVolProc(myHANDLE hArcData, tChangeVolProc pChangeVolProc)
-{
-	IMG_SetCallBackVol(hArcData, pChangeVolProc);
-}
+	// This function allows you to notify user about changing a volume when packing files
+	void __stdcall SetChangeVolProc(myHANDLE hArcData, tChangeVolProc pChangeVolProc)
+	{
+		IMG_SetCallBackVol(hArcData, pChangeVolProc);
+	}
 
-// This function allows you to notify user about the progress when you un/pack files
-void __stdcall SetProcessDataProc(myHANDLE hArcData, tProcessDataProc pProcessDataProc)
-{
-	IMG_SetCallBackProc(hArcData, pProcessDataProc);
+	// This function allows you to notify user about the progress when you un/pack files
+	void __stdcall SetProcessDataProc(myHANDLE hArcData, tProcessDataProc pProcessDataProc)
+	{
+		IMG_SetCallBackProc(hArcData, pProcessDataProc);
+	}
 }
