@@ -21,6 +21,7 @@
 #include <memory>
 #include <cstddef>
 #include <vector>
+#include <array>
 #include <cassert>
 using std::nothrow, std::uint8_t;
 
@@ -202,12 +203,49 @@ static uint32_t combine(uint16_t hi, uint16_t lo) {
 }
 //----------------IMG Definitions-------------
 
+template<size_t N>
+class minimal_fixed_string_t {
+	std::array<char, N> data_m = { '\0' };
+	size_t size_m = 0;
+public:
+	minimal_fixed_string_t() = default;
+	minimal_fixed_string_t(const minimal_fixed_string_t&) = default;
+	minimal_fixed_string_t(const char* str) {
+		push_back(str);
+	}
+	constexpr size_t size() const { return size_m; }
+	constexpr size_t capacity() const { return data_m.size()-1; }
+	constexpr bool empty() const { return size_m == 0; }
+	constexpr       char& operator[](size_t idx) { return data_m[idx]; }
+	constexpr const char& operator[](size_t idx) const { return data_m[idx]; }
+	constexpr const char* data() const { return data_m.data(); }
+	constexpr       char* data() { return data_m.data(); }
+	bool push_back(char c) {
+		if (size() == capacity()) return false;
+		data_m[size_m++] = c;
+		data_m[size_m] = '\0';
+		return true;
+	}
+	bool push_back(const char* str) {
+		data_m[size_m] = '\0';
+		auto res = !strcpy_s( data()+size(), capacity()-size(), str);
+		size_m += strnlen_s(data() + size(), capacity() - size());
+		return res;
+	}
+	template<size_t M>
+	bool push_back(const minimal_fixed_string_t<M>& fixed_str) {
+		data_m[size_m] = '\0';
+		auto res = !strcpy_s(data() + size(), capacity() - size(), fixed_str.data());
+		size_m += strnlen_s(data() + size(), capacity() - size());
+		return res;
+	}
+};
+
 struct arc_dir_entry_t
 {
-	char FileName[MAX_PATH];
-	char PathName[MAX_PATH];
-	unsigned FileSize;
-	unsigned FileTime;
+	minimal_fixed_string_t<MAX_PATH> PathName;
+	size_t FileSize;
+	uint32_t FileTime;
 	unsigned FileAttr;
 	uint32_t FirstClus;
 };
@@ -282,33 +320,30 @@ dir_entry_name_types_t get_dir_entry_type(const char* DIR_Name) {
 }
 
 //! Returns number of invalid chars
-uint32_t dir_entry_name_to_cstr(const char* DIR_Name, char* name, size_t name_size) {
+template<typename T>
+uint32_t dir_entry_name_to_str(const char* DIR_Name, T& name) {
 	// if (DIR_Name[0] == char(0x05)) // because 0xE5 used in Japan
 	//		FileName[i++] = char(0xE5);
-	uint32_t i = 0, invalid = 0;
+	uint32_t invalid = 0;
 
-	for (; i < 8; ++i) {
-		assert(name_size > i);
+	for (int i = 0; i < 8; ++i) {
 		if (!ValidChar(DIR_Name[i])) {
 			if(DIR_Name[i] != ' ') ++invalid;
 			break;
 		}
-		name[i] = DIR_Name[i];
+		name.push_back( DIR_Name[i] );
 	}
-	assert(name_size > i); //-V104
 	if (ValidChar(DIR_Name[8]))
 	{
-		name[i++] = '.';
+		name.push_back('.');
 	}
-	for (uint32_t j = 0; j < 3; ++j) {
-		if (!ValidChar(DIR_Name[j + 8])) {
-			if (DIR_Name[j + 8] != ' ') ++invalid;
+	for (int i = 8; i < 8 + 3; ++i) {
+		if (!ValidChar(DIR_Name[i])) {
+			if (DIR_Name[i] != ' ') ++invalid;
 			break;
 		}
-		assert(name_size > i); //-V104
-		name[i++] = DIR_Name[j + 8];
+		name.push_back(DIR_Name[i]);
 	}
-	name[i] = '\0';
 	return invalid;
 }
 
@@ -321,7 +356,8 @@ size_t next_cluster_FAT12(size_t firstclus, const tArchive* arch)
 	return ( (*word_ptr) >> (( firstclus % 2) ? 4 : 0) ) & 0x0FFF; //-V112
 }
 
-int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD depth)
+// root -- by copy to avoid problems while relocating vector
+int CreateFileList(minimal_fixed_string_t<MAX_PATH> root, size_t firstclus, tArchive* arch, DWORD depth)
 {		
 	size_t portion_size = 0;
 	if (firstclus == 0)
@@ -360,29 +396,20 @@ int CreateFileList(const char* root, size_t firstclus, tArchive* arch, DWORD dep
 			arch->arc_dir_entries.emplace_back();
 			auto& newentryref = arch->arc_dir_entries.back();
 			newentryref.FileAttr = sector[entry_in_cluster].DIR_Attr;
-			auto invalid_chars = dir_entry_name_to_cstr(sector[entry_in_cluster].DIR_Name, 
-				newentryref.FileName, sizeof(newentryref.FileName)); // TODO: check invalid chars counter
-			newentryref.PathName[0] = '\0';
-			if ( root[0] != '\0') // If not empty
-			{	// TODO: errors handling
-				strcpy_s(newentryref.PathName, sizeof(newentryref.PathName)-1, root);
-				strcat(newentryref.PathName, "\\"); // PathName-1 to avoid strcat_s + math
-			}
-			strcat_s(newentryref.PathName, sizeof(newentryref.PathName), newentryref.FileName);
+			// TODO: errors handling
+			newentryref.PathName.push_back(root); // OK for empty root
+			newentryref.PathName.push_back('\\');
+			auto invalid_chars = dir_entry_name_to_str(sector[entry_in_cluster].DIR_Name, newentryref.PathName);
 			newentryref.FileTime = combine(sector[entry_in_cluster].DIR_WrtDate, sector[entry_in_cluster].DIR_WrtTime);
 			newentryref.FileSize = sector[entry_in_cluster].DIR_FileSize;
 			newentryref.FirstClus = sector[entry_in_cluster].DIR_FstClusLO;
-			//newentryref.FirstClus = combine(sector[entry_in_cluster].DIR_FstClusHI, sector[entry_in_cluster].DIR_FstClusLO);
+			//newentryref.FirstClus = combine(sector[entry_in_cluster].DIR_FstClusHI, sector[entry_in_cluster].DIR_FstClusLO); // FAT32
 
 			if ((newentryref.FileAttr & ATTR_DIRECTORY) &&
 				(newentryref.FirstClus < 0xFF0) && (newentryref.FirstClus > 0x1)
 				&& (depth <= 100))
 			{
-				// TODO: Need more elegant fix! 
-				// On vector realocate newentryref.PathName becomes invaluid.
-				char temp_pathname[sizeof(newentryref.PathName)];
-				strcpy_s(temp_pathname, sizeof(newentryref.PathName), newentryref.PathName);
-				CreateFileList(temp_pathname, newentryref.FirstClus, arch, depth + 1);
+				CreateFileList(newentryref.PathName, newentryref.FirstClus, arch, depth + 1);
 			}
 			entry_in_cluster++;
 		}
@@ -498,7 +525,7 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	// trying to read root directory
 	arch->counter = 0;
 	arch->arc_dir_entries.clear();
-	CreateFileList("", 0, arch.get(), 0);
+	CreateFileList(minimal_fixed_string_t<MAX_PATH>{}, 0, arch.get(), 0);
 	arch->arc_dir_entries.shrink_to_fit();
 
 	ArchiveData->OpenResult = 0;// ok
@@ -513,10 +540,11 @@ int IMG_NextItem(myHANDLE arch, tHeaderData* HeaderData)
 	}
 
 	strcpy(HeaderData->ArcName, arch->archname);
-	strcpy(HeaderData->FileName, arch->arc_dir_entries[arch->counter].PathName);
+	strcpy(HeaderData->FileName, arch->arc_dir_entries[arch->counter].PathName.data());
 	HeaderData->FileAttr = arch->arc_dir_entries[arch->counter].FileAttr;
 	HeaderData->FileTime = arch->arc_dir_entries[arch->counter].FileTime;
-	HeaderData->PackSize = arch->arc_dir_entries[arch->counter].FileSize;
+	// For files larger than 2Gb -- implement tHeaderDataEx
+	HeaderData->PackSize = static_cast<int>(arch->arc_dir_entries[arch->counter].FileSize); 
 	HeaderData->UnpSize = HeaderData->PackSize;
 	HeaderData->CmtBuf = 0;
 	HeaderData->CmtBufSize = 0;
@@ -535,7 +563,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	char dest[MAX_PATH] = "";
 	HANDLE hUnpFile;
 	size_t nextclus;
-	DWORD remaining;
+	size_t remaining;
 	size_t towrite;
 	DWORD attributes;
 	FILETIME LocTime, GlobTime;
