@@ -12,6 +12,8 @@ Installation
 
 As usual for the TCmd. Works in Double Commander for Windows.
 
+Binary releases available [here](https://github.com/indrekis/FDDImage_TCMD_plugin/releases).
+
 Compilation
 ===========
 
