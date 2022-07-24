@@ -10,7 +10,10 @@ Original [img readme](orig_img_read.txt)
 Installation
 ============
 
-As usual for the TCmd. Works in Double Commander for Windows.
+As usual for the TCmd: can be installed manually and archive with pluginst.inf provided, TCmd would propose 
+to install the plugin when opening the archive. 
+
+Works in Double Commander for Windows.
 
 Binary releases available [here](https://github.com/indrekis/FDDImage_TCMD_plugin/releases).
 
