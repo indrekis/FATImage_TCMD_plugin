@@ -45,78 +45,6 @@ BOOL APIENTRY DllMain(HANDLE hModule,
 	return TRUE;
 }
 
-//----------------FAT12 Definitions-------------
-
-constexpr size_t sector_size = 512;
-
-//! https://wiki.osdev.org/FAT#BPB_.28BIOS_Parameter_Block.29
-//! FAT is little endian.
-// BPB = BIOS Parameter Block
-// BS = (Extended) Boot Record. Extended BR is also called EBPB 
-#pragma pack(push, 1) // See also __attribute__((packed)) 
-struct tFAT12BootSec
-{
-	uint8_t  BS_jmpBoot[3];
-	uint8_t  BS_OEMName[8];
-	uint16_t BPB_bytesPerSec; 
-	uint8_t  BPB_SecPerClus;
-	uint16_t BPB_RsvdSecCnt;  
-	uint8_t  BPB_NumFATs;	  // Often 1 or 2
-	uint16_t BPB_RootEntCnt;
-	uint16_t BPB_TotSec16;    // 0 if more than 65535 -- then val in. BPB_TotSec32
-	uint8_t  BPB_MediaDescr;
-	uint16_t BPB_SectorsPerFAT; // FAT12/16 only
-	uint16_t BPB_SecPerTrk;
-	uint16_t BPB_NumHeads;
-	uint32_t BPB_HiddSec;     // "Number of hidden sectors. (i.e. the LBA of the beginning of the partition.)"
-	uint32_t BPB_TotSec32;
-	// Extended Boot Record, FAT12/16 only 
-	uint8_t  BS_DrvNum;	      // Ignore it
-	uint8_t  BS_ReservedOrNT; // Ignore it
-	uint8_t  BS_BootSig;	  // Signature (must be 0x28 or 0x29). TODO: check
-	uint32_t BS_VolID;		  // Volume serial number
-	uint8_t  BS_VolLab[11];   // Should be padded by spaces
-	uint8_t  BS_FilSysType[8];// "The spec says never to trust the contents of this string for any use."
-	uint8_t  remaining_part[448];
-	uint16_t signature;       // 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
-};
-#pragma pack(pop)
-
-static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
-static_assert(std::endian::native == std::endian::little, "Wrong endiannes");
-
-#pragma pack(push, 1)
-struct FATxx_dir_entry_t
-{
-	char  DIR_Name[11];
-	uint8_t  DIR_Attr;
-	uint8_t  DIR_NTRes; // "Reserved for use by Windows NT"
-	uint8_t  DIR_CrtTimeTenth;
-	uint16_t DIR_CrtTime;	// TODO: Use it too
-	uint16_t DIR_CrtDate;	// TODO: Use it too
-	uint16_t DIR_LstAccDate;
-	uint16_t DIR_FstClusHI; // High bytes of first cluster on FAT32, obscure attribute of some OS for FAT12/16 -- ignore
-	uint16_t DIR_WrtTime;
-	uint16_t DIR_WrtDate;
-	uint16_t DIR_FstClusLO;
-	uint32_t DIR_FileSize;
-};
-#pragma pack(pop)
-
-static_assert(sizeof(FATxx_dir_entry_t) == 32, "Wrong size of FATxx_dir_entry_t"); //-V112
-
-enum file_attr_t{ 
-	ATTR_READONLY  = 0x01,
-	ATTR_HIDDEN    = 0x02,
-	ATTR_SYSTEM    = 0x04,
-	ATTR_VOLUME_ID = 0x08,
-	ATTR_DIRECTORY = 0x10,
-	ATTR_ARCHIVE   = 0x20,
-	ATTR_LONG_NAME = 0x0F,
-};
-
-//--------End of  FAT12 Definitions-------------
-
 //----------------I/O functions ---------------
 static const auto file_open_error_v = INVALID_HANDLE_VALUE;
 using file_handle_t = HANDLE;
@@ -138,7 +66,6 @@ static file_handle_t open_file_overwrite(const char* filename) {
 	handle = CreateFile(filename, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
 	return handle;
 }
-
 
 //! Returns true if success
 static bool close_file(file_handle_t handle) {
@@ -198,10 +125,12 @@ static size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t si
 	}
 }
 
+
+
+//----------------Tools-------------------------
 static uint32_t combine(uint16_t hi, uint16_t lo) {
-	return ( static_cast<uint32_t>(hi) << (sizeof(hi) * CHAR_BIT) ) + lo; 
+	return (static_cast<uint32_t>(hi) << (sizeof(hi) * CHAR_BIT)) + lo;
 }
-//----------------IMG Definitions-------------
 
 template<size_t N>
 class minimal_fixed_string_t {
@@ -214,7 +143,7 @@ public:
 		push_back(str);
 	}
 	constexpr size_t size() const { return size_m; }
-	constexpr size_t capacity() const { return data_m.size()-1; }
+	constexpr size_t capacity() const { return data_m.size() - 1; }
 	constexpr bool empty() const { return size_m == 0; }
 	constexpr       char& operator[](size_t idx) { return data_m[idx]; }
 	constexpr const char& operator[](size_t idx) const { return data_m[idx]; }
@@ -228,7 +157,7 @@ public:
 	}
 	bool push_back(const char* str) {
 		data_m[size_m] = '\0';
-		auto res = !strcpy_s( data()+size(), capacity()-size(), str);
+		auto res = !strcpy_s(data() + size(), capacity() - size(), str);
 		size_m += strnlen_s(data() + size(), capacity() - size());
 		return res;
 	}
@@ -241,12 +170,227 @@ public:
 	}
 };
 
+//----------------FAT12 Definitions-------------
+
+constexpr size_t sector_size = 512;
+
+//! https://wiki.osdev.org/FAT#BPB_.28BIOS_Parameter_Block.29
+//! FAT is little endian.
+// BPB = BIOS Parameter Block
+// BS = (Extended) Boot Record. Extended BR is also called EBPB 
+#pragma pack(push, 1) // See also __attribute__((packed)) 
+struct tFAT12BootSec
+{
+	uint8_t  BS_jmpBoot[3];
+	uint8_t  BS_OEMName[8];
+	uint16_t BPB_bytesPerSec;
+	uint8_t  BPB_SecPerClus;
+	uint16_t BPB_RsvdSecCnt;
+	uint8_t  BPB_NumFATs;	  // Often 1 or 2
+	uint16_t BPB_RootEntCnt;
+	uint16_t BPB_TotSec16;    // 0 if more than 65535 -- then val in. BPB_TotSec32
+	uint8_t  BPB_MediaDescr;
+	uint16_t BPB_SectorsPerFAT; // FAT12/16 only
+	uint16_t BPB_SecPerTrk;
+	uint16_t BPB_NumHeads;
+	uint32_t BPB_HiddSec;     // "Number of hidden sectors. (i.e. the LBA of the beginning of the partition.)"
+	uint32_t BPB_TotSec32;
+	// Extended Boot Record, FAT12/16 only 
+	uint8_t  BS_DrvNum;	      // Ignore it
+	uint8_t  BS_ReservedOrNT; // Ignore it
+	uint8_t  BS_BootSig;	  // Signature (must be 0x28 or 0x29). TODO: check
+	uint32_t BS_VolID;		  // Volume serial number
+	uint8_t  BS_VolLab[11];   // Should be padded by spaces
+	uint8_t  BS_FilSysType[8];// "The spec says never to trust the contents of this string for any use."
+	uint8_t  remaining_part[448];
+	uint16_t signature;       // 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
+};
+#pragma pack(pop)
+
+static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
+static_assert(std::endian::native == std::endian::little, "Wrong endiannes");
+
+#pragma pack(push, 1)
+struct FAT_attrib_t {
+	enum file_attr_t {
+		ATTR_READONLY = 0x01,
+		ATTR_HIDDEN = 0x02,
+		ATTR_SYSTEM = 0x04,
+		ATTR_VOLUME_ID = 0x08,
+		ATTR_DIRECTORY = 0x10,
+		ATTR_ARCHIVE = 0x20,
+		ATTR_LONG_NAME = 0x0F,
+	};
+	uint8_t  attribute;
+
+	bool is_volumeID() const { // TODO: rename
+		return attribute == ATTR_VOLUME_ID;
+	}
+
+	bool is_longname_part() const {
+		return attribute == ATTR_LONG_NAME;
+	}
+
+	bool is_dir() const {
+		return attribute & ATTR_DIRECTORY;
+	}
+
+	bool is_invalid() const {
+		bool res = ((attribute & 0xC8) != 0);
+		res |= ((!is_volumeID()) && ((attribute & ATTR_VOLUME_ID) != 0));
+		// Other checks here
+		return res;
+	}
+
+	bool is_readonly() const {
+		return attribute & ATTR_READONLY;
+	}
+
+	bool is_archive() const {
+		return attribute & ATTR_ARCHIVE;
+	}
+
+	bool is_hidden() const {
+		return attribute & ATTR_HIDDEN;
+	}
+	
+	bool is_system() const {
+		return attribute & ATTR_SYSTEM;
+	}
+
+	uint32_t get_user_attr() const {
+		return attribute & (ATTR_READONLY | ATTR_ARCHIVE | ATTR_HIDDEN | ATTR_SYSTEM);
+	}
+
+	template<std::integral T>
+	operator T() const {
+		return attribute; 
+	}
+};
+#pragma pack(pop)
+static_assert(sizeof(FAT_attrib_t) == 1, "Wrong FAT_attrib_t size");
+
+
+//! Platform-dependent IO function. 
+//! Returns true if successful
+bool set_file_attributes(const char* filename, FAT_attrib_t attribute) {
+	/*
+	DWORD winattr = FILE_ATTRIBUTE_NORMAL;
+	if (attribute.is_readonly()) winattr |= FILE_ATTRIBUTE_READONLY;
+	if (attribute.is_archive() ) winattr |= FILE_ATTRIBUTE_ARCHIVE;
+	if (attribute.is_hidden()  ) winattr |= FILE_ATTRIBUTE_HIDDEN;
+	if (attribute.is_system()  ) winattr |= FILE_ATTRIBUTE_SYSTEM;
+	*/ 
+	return SetFileAttributes(filename, attribute.get_user_attr()); // Codes are equal
+}
+
+#pragma pack(push, 1)
+struct FATxx_dir_entry_t
+{
+	char  DIR_Name[11];
+	FAT_attrib_t  DIR_Attr;
+	uint8_t  DIR_NTRes; // "Reserved for use by Windows NT"
+	uint8_t  DIR_CrtTimeTenth;
+	uint16_t DIR_CrtTime;	// TODO: Use it too
+	uint16_t DIR_CrtDate;	// TODO: Use it too
+	uint16_t DIR_LstAccDate;
+	uint16_t DIR_FstClusHI; // High bytes of first cluster on FAT32, obscure attribute of some OSes for FAT12/16 -- ignore
+	uint16_t DIR_WrtTime;
+	uint16_t DIR_WrtDate;
+	uint16_t DIR_FstClusLO;
+	uint32_t DIR_FileSize;
+
+	bool is_dir_record_free() const {
+		return (DIR_Name[0] == '\x00');
+	}
+
+	bool is_dir_record_deleted() const {
+		return (DIR_Name[0] == '\xE5') || (DIR_Name[0] == '\x05');
+	}
+
+	bool is_dir_record_unknown() const {
+		return !(is_dir_record_free()) &&
+			!(is_dir_record_deleted()) &&
+			!ValidChar(DIR_Name[0]);
+	}
+
+	bool is_dir_record_used() const {
+		return !is_dir_record_unknown();
+	}
+
+	//! Convenience functions
+	bool is_dir_record_volumeID() const {
+		return DIR_Attr.is_volumeID();
+	}
+
+	bool is_dir_record_longname_part() const {
+		return DIR_Attr.is_longname_part();
+	}
+
+	bool is_dir_record_dir() const {
+		return DIR_Attr.is_dir();
+	}
+
+	bool is_dir_record_invalid_attr() const {
+		return DIR_Attr.is_invalid();
+	}
+
+	bool is_dir_record_regular_file() const {
+		return !is_dir_record_volumeID() &&
+			!is_dir_record_longname_part() &&
+			!is_dir_record_dir() &&
+			!is_dir_record_invalid_attr();
+	}
+
+	//! Returns number of invalid chars
+	template<typename T>
+	uint32_t dir_entry_name_to_str(T& name) {
+		// if (DIR_Name[0] == char(0x05)) FileName[i++] = char(0xE5); // because 0xE5 used in Japan
+		uint32_t invalid = 0;
+
+		for (int i = 0; i < 8; ++i) {
+			if (!ValidChar(DIR_Name[i])) {
+				if (DIR_Name[i] != ' ') ++invalid;
+				break;
+			}
+			name.push_back(DIR_Name[i]);
+		}
+		if (ValidChar(DIR_Name[8]))
+		{
+			name.push_back('.');
+		}
+		for (int i = 8; i < 8 + 3; ++i) {
+			if (!ValidChar(DIR_Name[i])) {
+				if (DIR_Name[i] != ' ') ++invalid;
+				break;
+			}
+			name.push_back(DIR_Name[i]);
+		}
+		return invalid;
+	}
+
+	static constexpr char nonValidChars[] = R"("*+,./:;<=>?[\]|)";
+	static int ValidChar(char mychar)
+	{		
+		return !((mychar >= '\x00') && (mychar <= '\x20')) &&
+			strchr(nonValidChars, mychar) == nullptr;
+	}
+};
+#pragma pack(pop)
+static_assert(offsetof(FATxx_dir_entry_t, DIR_Attr) == 11, "Wrong FAT_attrib_t offset");
+static_assert(sizeof(FATxx_dir_entry_t) == 32, "Wrong size of FATxx_dir_entry_t"); //-V112
+
+
+//--------End of  FAT12 Definitions-------------
+
+//----------------IMG Definitions-------------
+
 struct arc_dir_entry_t
 {
 	minimal_fixed_string_t<MAX_PATH> PathName;
 	size_t FileSize;
 	uint32_t FileTime;
-	unsigned FileAttr;
+	FAT_attrib_t FileAttr;
 	uint32_t FirstClus;
 };
 
@@ -281,72 +425,6 @@ using myHANDLE = tArchive*;
 
 //------------------=[ "Kernel" ]=-------------
 
-#define AT_OK      0
-#define AT_VOL     1
-#define AT_DIR     2
-#define AT_LONG    3
-#define AT_INVALID 4
-
-DWORD DIR_AttrToFileAttr(uint8_t DIR_Attr) 
-{
-	if (DIR_Attr == ATTR_VOLUME_ID) return AT_VOL;
-	if (DIR_Attr == ATTR_LONG_NAME) return AT_LONG;
-	if ((DIR_Attr & 0xC8) != 0) return AT_INVALID;
-	if (DIR_Attr & ATTR_DIRECTORY) return AT_DIR;
-	return AT_OK;
-}
-
-int ValidChar(char mychar)
-{
-	static constexpr char nonValid[] = R"("*+,./:;<=>?[\]|)";
-
-	return !((mychar >= '\x00') && (mychar <= '\x20')) &&  
-		strchr(nonValid, mychar) == nullptr;
-}
-
-enum dir_entry_name_types_t { 
-	DN_OK      = 0,
-	DN_DELETED = 1,
-	DN_FREE    = 2, // indicates that all next entries are free too, (DOS 2.0+)
-	DN_UNKNOWN = 3,
-};
-
-dir_entry_name_types_t get_dir_entry_type(const char* DIR_Name) {
-	if (DIR_Name[0] == '\x00') return DN_FREE;
-	if (DIR_Name[0] == '\xE5') return DN_DELETED;
-	if (DIR_Name[0] == '\x05') return DN_DELETED;
-	if (!ValidChar(DIR_Name[0]))   return DN_UNKNOWN;
-	return DN_OK;
-}
-
-//! Returns number of invalid chars
-template<typename T>
-uint32_t dir_entry_name_to_str(const char* DIR_Name, T& name) {
-	// if (DIR_Name[0] == char(0x05)) // because 0xE5 used in Japan
-	//		FileName[i++] = char(0xE5);
-	uint32_t invalid = 0;
-
-	for (int i = 0; i < 8; ++i) {
-		if (!ValidChar(DIR_Name[i])) {
-			if(DIR_Name[i] != ' ') ++invalid;
-			break;
-		}
-		name.push_back( DIR_Name[i] );
-	}
-	if (ValidChar(DIR_Name[8]))
-	{
-		name.push_back('.');
-	}
-	for (int i = 8; i < 8 + 3; ++i) {
-		if (!ValidChar(DIR_Name[i])) {
-			if (DIR_Name[i] != ' ') ++invalid;
-			break;
-		}
-		name.push_back(DIR_Name[i]);
-	}
-	return invalid;
-}
-
 size_t next_cluster_FAT12(size_t firstclus, const tArchive* arch)
 {
 	const auto FAT_byte_pre = arch->fattable.data() + ((firstclus * 3) >> 1); // firstclus + firstclus/2
@@ -357,11 +435,11 @@ size_t next_cluster_FAT12(size_t firstclus, const tArchive* arch)
 }
 
 // root -- by copy to avoid problems while relocating vector
-int CreateFileList(minimal_fixed_string_t<MAX_PATH> root, size_t firstclus, tArchive* arch, DWORD depth)
+int CreateFileList(minimal_fixed_string_t<MAX_PATH> root, size_t firstclus, tArchive* arch, DWORD depth) //-V813
 {		
 	size_t portion_size = 0;
 	if (firstclus == 0)
-	{   // Read whole dir at once
+	{   // Read whole FAT12/16 dir at once
 		set_file_pointer(arch->hArchFile, arch->rootarea_off);
 		portion_size = arch->dataarea_off - arch->rootarea_off; // Size of root dir
 	}
@@ -379,19 +457,17 @@ int CreateFileList(minimal_fixed_string_t<MAX_PATH> root, size_t firstclus, tArc
 
 	do {
 		size_t entry_in_cluster = 0;
-		while ((entry_in_cluster < records_number) && (sector[entry_in_cluster].DIR_Name[0] != '\x00'))
+		while ((entry_in_cluster < records_number) && (!sector[entry_in_cluster].is_dir_record_free()))
 		{
-			switch (get_dir_entry_type(sector[entry_in_cluster].DIR_Name))
+			if( sector[entry_in_cluster].is_dir_record_deleted() ||
+				sector[entry_in_cluster].is_dir_record_unknown() ||
+				sector[entry_in_cluster].is_dir_record_volumeID() ||
+				sector[entry_in_cluster].is_dir_record_longname_part() ||
+				sector[entry_in_cluster].is_dir_record_invalid_attr()
+				)
 			{
-			case DN_UNKNOWN:
-			case DN_DELETED: { entry_in_cluster++; continue; };
-			}
-
-			switch (DIR_AttrToFileAttr(sector[entry_in_cluster].DIR_Attr))
-			{
-			case AT_LONG:
-			case AT_VOL:
-			case AT_INVALID: { entry_in_cluster++; continue; };
+				entry_in_cluster++; 
+				continue;
 			}
 			arch->arc_dir_entries.emplace_back();
 			auto& newentryref = arch->arc_dir_entries.back();
@@ -399,13 +475,13 @@ int CreateFileList(minimal_fixed_string_t<MAX_PATH> root, size_t firstclus, tArc
 			// TODO: errors handling
 			newentryref.PathName.push_back(root); // OK for empty root
 			newentryref.PathName.push_back('\\');
-			auto invalid_chars = dir_entry_name_to_str(sector[entry_in_cluster].DIR_Name, newentryref.PathName);
+			auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
 			newentryref.FileTime = combine(sector[entry_in_cluster].DIR_WrtDate, sector[entry_in_cluster].DIR_WrtTime);
 			newentryref.FileSize = sector[entry_in_cluster].DIR_FileSize;
 			newentryref.FirstClus = sector[entry_in_cluster].DIR_FstClusLO;
 			//newentryref.FirstClus = combine(sector[entry_in_cluster].DIR_FstClusHI, sector[entry_in_cluster].DIR_FstClusLO); // FAT32
 
-			if ((newentryref.FileAttr & ATTR_DIRECTORY) &&
+			if ( sector[entry_in_cluster].is_dir_record_dir() &&
 				(newentryref.FirstClus < 0xFF0) && (newentryref.FirstClus > 0x1)
 				&& (depth <= 100))
 			{
@@ -514,7 +590,7 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 		ArchiveData->OpenResult = E_NO_MEMORY;
 		return nullptr;
 	}
-	// trying to read fat table
+	// Read FAT table
 	result = read_file(arch->hArchFile, arch->fattable.data(), arch->sectors_in_FAT * sector_size);
 	if (result != arch->sectors_in_FAT * sector_size)
 	{
@@ -522,7 +598,7 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 		return nullptr;
 	}
 
-	// trying to read root directory
+	// Read root directory
 	arch->counter = 0;
 	arch->arc_dir_entries.clear();
 	CreateFileList(minimal_fixed_string_t<MAX_PATH>{}, 0, arch.get(), 0);
@@ -565,7 +641,6 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	size_t nextclus;
 	size_t remaining;
 	size_t towrite;
-	DWORD attributes;
 	FILETIME LocTime, GlobTime;
 
 	if (Operation == PK_SKIP ) return 0;
@@ -613,7 +688,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 			return E_UNKNOWN_FORMAT;
 		}
 		set_file_pointer(arch->hArchFile, arch->dataarea_off + static_cast<size_t>(nextclus - 2) * arch->cluster_size); //-V104
-		towrite = (remaining > arch->cluster_size) ? (arch->cluster_size) : (remaining); //-V101
+		towrite = (remaining > arch->cluster_size) ? (arch->cluster_size) : (remaining); //-V101 //-V105 //-V104
 		size_t result = read_file(arch->hArchFile, buff.get(), towrite);
 		if (result != towrite)
 		{
@@ -626,7 +701,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 			close_file(hUnpFile);
 			return E_EWRITE;
 		}
-		if (remaining > arch->cluster_size) { remaining -= arch->cluster_size; }
+		if (remaining > arch->cluster_size) { remaining -= arch->cluster_size; } //-V104 //-V101
 		else { remaining = 0; }
 
 		nextclus = next_cluster_FAT12(nextclus, arch);
@@ -645,15 +720,8 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 		delete_file(dest);
 	}
 
-	// set file attributes
-	attributes = FILE_ATTRIBUTE_NORMAL;
-	if (cur_entry.FileAttr & ATTR_READONLY) attributes |= FILE_ATTRIBUTE_READONLY;
-	if (cur_entry.FileAttr & ATTR_ARCHIVE) attributes |= FILE_ATTRIBUTE_ARCHIVE;
-	if (cur_entry.FileAttr & ATTR_HIDDEN) attributes |= FILE_ATTRIBUTE_HIDDEN;
-	if (cur_entry.FileAttr & ATTR_SYSTEM) attributes |= FILE_ATTRIBUTE_SYSTEM;
-	SetFileAttributes(dest, attributes);
-
-	return 0;//ok
+	set_file_attributes(dest, cur_entry.FileAttr);
+	return 0; 
 };
 
 int IMG_Close(myHANDLE hArcData)
