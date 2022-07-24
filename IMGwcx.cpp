@@ -155,7 +155,7 @@ public:
 	}
 	constexpr size_t size() const { return size_m; }
 	constexpr size_t capacity() const { return data_m.size() - 1; }
-	constexpr bool empty() const { return size_m == 0; }
+	constexpr bool is_empty() const { return size_m == 0; }
 	constexpr       char& operator[](size_t idx) { return data_m[idx]; }
 	constexpr const char& operator[](size_t idx) const { return data_m[idx]; }
 	constexpr const char* data() const { return data_m.data(); }
@@ -182,8 +182,6 @@ public:
 };
 
 //----------------FAT12 Definitions-------------
-
-constexpr size_t sector_size = 512;
 
 //! https://wiki.osdev.org/FAT#BPB_.28BIOS_Parameter_Block.29
 //! FAT is little endian.
@@ -380,6 +378,22 @@ struct FATxx_dir_entry_t
 		return invalid;
 	}
 
+	uint32_t get_first_cluster_FAT12() const {
+		return DIR_FstClusLO;
+	}
+
+	// For the future
+	uint32_t get_first_cluster_FAT16() const {
+		return DIR_FstClusLO;
+	}
+	uint32_t get_first_cluster_FAT32() const {
+		return combine(DIR_FstClusHI, DIR_FstClusLO); // FAT32;
+	}
+
+	uint32_t get_file_datetime() const {
+		return combine(DIR_WrtDate, DIR_WrtTime);
+	}
+
 	static constexpr char nonValidChars[] = R"("*+,./:;<=>?[\]|)";
 	static int ValidChar(char mychar)
 	{		
@@ -407,7 +421,11 @@ struct arc_dir_entry_t
 
 struct tArchive
 {
-	char archname[MAX_PATH]{ '\0' }; // All set to 0
+	static constexpr size_t sector_size = 512;
+	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
+	using on_bad_BPB_callback_t = int(*)(tArchive*, int openmode);
+	on_bad_BPB_callback_t on_bad_BPB_callback = nullptr;
+	int openmode_m = PK_OM_LIST;
 	file_handle_t hArchFile = file_handle_t();    //opened file handle
 
 	std::vector<uint8_t> fattable;
@@ -424,6 +442,14 @@ struct tArchive
 	tChangeVolProc   pLocChangeVol   = nullptr;
 	tProcessDataProc pLocProcessData = nullptr;
 
+	tArchive(const tArchive&) = delete;
+	tArchive& operator=(const tArchive&) = delete;
+
+	tArchive(on_bad_BPB_callback_t clb, const char* arcnm, file_handle_t fh, int openmode):
+		archname(arcnm), on_bad_BPB_callback(clb), openmode_m(openmode), hArchFile(fh)
+	{
+	}
+
 	~tArchive() {
 		if (hArchFile)
 			close_file(hArchFile);
@@ -431,6 +457,57 @@ struct tArchive
 
 	size_t cluster_to_file_off(uint32_t cluster) {
 		return dataarea_off + static_cast<size_t>(cluster - 2) * cluster_size;
+	}
+
+	int process_bootsector() {
+		auto result = read_file(hArchFile, &bootsec, sector_size);
+		if (result != sector_size)
+		{
+			return E_EREAD;
+		}
+
+		if (bootsec.BPB_bytesPerSec != sector_size)
+		{
+			return E_UNKNOWN_FORMAT;
+		}
+
+		if (bootsec.signature != 0xAA55)
+		{
+			int res = on_bad_BPB_callback(this, openmode_m);
+			if (res != 0) {
+				return res;
+			}
+		}
+
+		sectors_in_FAT = bootsec.BPB_SectorsPerFAT; // TODO: remove sectors_in_FAT and other
+		if ((sectors_in_FAT < 1) || (sectors_in_FAT > 12)) // FAT12 Only
+		{
+			return E_UNKNOWN_FORMAT;
+		}
+		rootentcnt = bootsec.BPB_RootEntCnt;
+		cluster_size = sector_size * bootsec.BPB_SecPerClus;
+		rootarea_off = sector_size * (bootsec.BPB_RsvdSecCnt +
+			sectors_in_FAT * static_cast<size_t>(bootsec.BPB_NumFATs));
+		dataarea_off = rootarea_off + rootentcnt * sizeof(FATxx_dir_entry_t);
+		return 0;
+	}
+
+	int load_FAT() {
+		const size_t fat_size_bytes = sectors_in_FAT * sector_size;
+		try {
+			fattable.reserve(fat_size_bytes); // To minimize overcommit
+			fattable.resize(fat_size_bytes);
+		}
+		catch (std::exception&) { // std::length_error, std::bad_alloc, other can be used by custom allocators
+			return E_NO_MEMORY;
+		}
+		// Read FAT table
+		auto result = read_file(hArchFile, fattable.data(), sectors_in_FAT * tArchive::sector_size);
+		if (result != sectors_in_FAT * sector_size)
+		{
+			return E_UNKNOWN_FORMAT;
+		}
+		return 0;
 	}
 
 	int extract_to_file(file_handle_t hUnpFile, uint32_t idx) {	
@@ -472,6 +549,95 @@ struct tArchive
 		}
 	}
 
+	// root passed by copy to avoid problems while relocating vector
+	int load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root, uint32_t firstclus, uint32_t depth) //-V813
+	{
+		if (root.is_empty()) { // Initial reading
+			counter = 0;
+			arc_dir_entries.clear();
+		}
+		size_t portion_size = 0;
+		if (firstclus == 0)
+		{   // Read whole FAT12/16 dir at once
+			set_file_pointer(hArchFile, rootarea_off);
+			portion_size = dataarea_off - rootarea_off; // Size of root dir
+		}
+		else {
+			set_file_pointer(hArchFile, cluster_to_file_off(firstclus));
+			portion_size = static_cast<size_t>(cluster_size);
+		}
+		size_t records_number = portion_size / sizeof(FATxx_dir_entry_t);
+		std::unique_ptr<FATxx_dir_entry_t[]> sector;
+		try {
+			sector = std::make_unique<FATxx_dir_entry_t[]>(records_number);
+		}
+		catch (std::bad_alloc&) {
+			return E_NO_MEMORY;
+		}
+
+		if ((firstclus == 1) || (firstclus >= 0xFF0)) { 
+			return E_UNKNOWN_FORMAT; 
+		}
+		size_t result = read_file(hArchFile, sector.get(), portion_size);
+		if (result != portion_size) { 
+			return E_EREAD; 
+		}
+
+		do {
+			size_t entry_in_cluster = 0;
+			while ((entry_in_cluster < records_number) && (!sector[entry_in_cluster].is_dir_record_free()))
+			{
+				if (sector[entry_in_cluster].is_dir_record_deleted() ||
+					sector[entry_in_cluster].is_dir_record_unknown() ||
+					sector[entry_in_cluster].is_dir_record_volumeID() ||
+					sector[entry_in_cluster].is_dir_record_longname_part() ||
+					sector[entry_in_cluster].is_dir_record_invalid_attr()
+					)
+				{
+					entry_in_cluster++;
+					continue;
+				}
+				arc_dir_entries.emplace_back();
+				auto& newentryref = arc_dir_entries.back();
+				newentryref.FileAttr = sector[entry_in_cluster].DIR_Attr;
+				// TODO: errors handling
+				newentryref.PathName.push_back(root); // OK for empty root
+				newentryref.PathName.push_back('\\');
+				auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
+				newentryref.FileTime = sector[entry_in_cluster].get_file_datetime();
+				newentryref.FileSize = sector[entry_in_cluster].DIR_FileSize;
+				newentryref.FirstClus = sector[entry_in_cluster].get_first_cluster_FAT12();
+
+				if (sector[entry_in_cluster].is_dir_record_dir() &&
+					(newentryref.FirstClus < 0xFF0) && (newentryref.FirstClus > 0x1)
+					&& (depth <= 100))
+				{
+					load_file_list_recursively(newentryref.PathName, newentryref.FirstClus, depth + 1);
+				}
+				++entry_in_cluster;
+			}
+			if (entry_in_cluster < records_number) { return 0; }
+			if (firstclus == 0)
+			{	
+				break; // We already processed FAT12/16 root dir
+			}
+			else {
+				firstclus = next_cluster_FAT12(firstclus);
+				if ((firstclus <= 1) || (firstclus >= 0xFF0)) { return 0; }
+				set_file_pointer(hArchFile, cluster_to_file_off(firstclus)); //-V104
+			}
+			result = read_file(hArchFile, sector.get(), portion_size);
+			if (result != portion_size) { 
+				return E_EREAD; 
+			}
+		} while (true);
+
+		if (root.is_empty()) { // Initial finished
+			arc_dir_entries.shrink_to_fit();
+		}
+		return 0;
+	}
+
 	uint32_t next_cluster_FAT12(uint32_t firstclus)
 	{
 		const auto FAT_byte_pre = fattable.data() + ((firstclus * 3) >> 1); // firstclus + firstclus/2
@@ -479,278 +645,33 @@ struct tArchive
 		const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
 		// Extract correct 12 bits -- lower for odd, upper for even: 
 		return ((*word_ptr) >> ((firstclus % 2) ? 4 : 0)) & 0x0FFF; //-V112
-	}
+	}	
 };
 
-using archive_HANDLE = tArchive*;
-
-//--------End of  IMG Definitions-------------
-
-//------------------=[ "Kernel" ]=-------------
-
-// root passed by copy to avoid problems while relocating vector
-int CreateFileList(minimal_fixed_string_t<MAX_PATH> root, size_t firstclus, tArchive* arch, DWORD depth) //-V813
-{		
-	size_t portion_size = 0;
-	if (firstclus == 0)
-	{   // Read whole FAT12/16 dir at once
-		set_file_pointer(arch->hArchFile, arch->rootarea_off);
-		portion_size = arch->dataarea_off - arch->rootarea_off; // Size of root dir
-	}
-	else {
-		set_file_pointer(arch->hArchFile, arch->dataarea_off + (firstclus - 2) * arch->cluster_size); //-V104
-		portion_size = arch->cluster_size;  //-V101
-	}	
-	size_t records_number = portion_size / sizeof(FATxx_dir_entry_t);
-	std::unique_ptr<FATxx_dir_entry_t[]> sector = std::make_unique<FATxx_dir_entry_t[]>(records_number);
-
-	if (sector == nullptr) { return 0; }
-	if ((firstclus == 1) || (firstclus >= 0xFF0)) { return 0; }
-	size_t result = read_file(arch->hArchFile, sector.get(), portion_size);
-	if (result != portion_size) { return 0; }
-
-	do {
-		size_t entry_in_cluster = 0;
-		while ((entry_in_cluster < records_number) && (!sector[entry_in_cluster].is_dir_record_free()))
-		{
-			if( sector[entry_in_cluster].is_dir_record_deleted() ||
-				sector[entry_in_cluster].is_dir_record_unknown() ||
-				sector[entry_in_cluster].is_dir_record_volumeID() ||
-				sector[entry_in_cluster].is_dir_record_longname_part() ||
-				sector[entry_in_cluster].is_dir_record_invalid_attr()
-				)
-			{
-				entry_in_cluster++; 
-				continue;
-			}
-			arch->arc_dir_entries.emplace_back();
-			auto& newentryref = arch->arc_dir_entries.back();
-			newentryref.FileAttr = sector[entry_in_cluster].DIR_Attr;
-			// TODO: errors handling
-			newentryref.PathName.push_back(root); // OK for empty root
-			newentryref.PathName.push_back('\\');
-			auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
-			newentryref.FileTime = combine(sector[entry_in_cluster].DIR_WrtDate, sector[entry_in_cluster].DIR_WrtTime);
-			newentryref.FileSize = sector[entry_in_cluster].DIR_FileSize;
-			newentryref.FirstClus = sector[entry_in_cluster].DIR_FstClusLO;
-			//newentryref.FirstClus = combine(sector[entry_in_cluster].DIR_FstClusHI, sector[entry_in_cluster].DIR_FstClusLO); // FAT32
-
-			if ( sector[entry_in_cluster].is_dir_record_dir() &&
-				(newentryref.FirstClus < 0xFF0) && (newentryref.FirstClus > 0x1)
-				&& (depth <= 100))
-			{
-				CreateFileList(newentryref.PathName, newentryref.FirstClus, arch, depth + 1);
-			}
-			entry_in_cluster++;
-		}
-		if (entry_in_cluster < records_number) { return 0; }
-		if (firstclus == 0)
-		{
-			break;
-		}
-		else {
-			firstclus = arch->next_cluster_FAT12(firstclus);
-			if ((firstclus <= 1) || (firstclus >= 0xFF0)) { return 0; }
-			set_file_pointer(arch->hArchFile, arch->dataarea_off + static_cast<size_t>(firstclus - 2) * arch->cluster_size); //-V104
-		}
-		result = read_file(arch->hArchFile, sector.get(), portion_size);
-		if (result != portion_size) { return 0; }
-	} while (true);
-
-	return 0;
-}
-
-archive_HANDLE IMG_Open(tOpenArchiveData* ArchiveData)
-{
-	std::unique_ptr<tArchive> arch; // Looks like TCmd API expects HANDLE/raw pointer,
-									// so smart pointer is used to manage cleanup on errors 
-									// only inside this function
-	size_t result;
-
-	//! Not used by TCmd yet.
-	ArchiveData->CmtBuf = 0;
-	ArchiveData->CmtBufSize = 0;
-	ArchiveData->CmtSize = 0;
-	ArchiveData->CmtState = 0;
-
-	ArchiveData->OpenResult = E_NO_MEMORY;// default error type
-	try {
-		arch = std::make_unique<tArchive>();
-	}
-	catch (std::bad_alloc&) {
-		return nullptr;
-	}
-
-	// trying to open
-	auto errcode = strcpy_s(arch->archname, sizeof(arch->archname), ArchiveData->ArcName);
-	if (errcode != 0) {
-		return nullptr;
-	}
-	
-	arch->hArchFile = open_file_shared_read(arch->archname);
-	if (arch->hArchFile == file_open_error_v)
-	{
-		return nullptr;
-	}
-
-	//----------begin of bootsec in use
-	result = read_file(arch->hArchFile, &(arch->bootsec), sector_size);
-	if (result != sector_size)
-	{
-		ArchiveData->OpenResult = E_EREAD;
-		return nullptr;
-	}
-
-	if (arch->bootsec.BPB_bytesPerSec != sector_size)
-	{
-		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
-		return nullptr;
-	}
-
-	if ( arch->bootsec.signature != 0xAA55 && ArchiveData->OpenMode == PK_OM_LIST)
-	{
-		//! Dialog only while listing
+int winAPI_msgbox_on_bad_BPB(tArchive*, int openmode) {
+	if (openmode == PK_OM_LIST) {
 		//! Is it correct to create own dialogs in plugin?
 		int msgboxID = MessageBoxEx(
 			NULL,
 			TEXT("Wrong BPB signature\nContinue?"),
 			TEXT("BPB Signature error"),
-			MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1, 
+			MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1,
 			0
 		);
 		if (msgboxID == IDCANCEL) {
-			ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
-			return nullptr;
+			return E_UNKNOWN_FORMAT;
 		}
-	}
-
-	arch->sectors_in_FAT = arch->bootsec.BPB_SectorsPerFAT;
-	if ((arch->sectors_in_FAT < 1) || (arch->sectors_in_FAT > 12))
-	{
-		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
-		return nullptr;
-	}
-	arch->rootentcnt = arch->bootsec.BPB_RootEntCnt;
-	arch->cluster_size = 512 * arch->bootsec.BPB_SecPerClus;
-	arch->rootarea_off = sector_size * (arch->bootsec.BPB_RsvdSecCnt +
-		        arch->sectors_in_FAT * static_cast<size_t>(arch->bootsec.BPB_NumFATs));
-	arch->dataarea_off = arch->rootarea_off + arch->rootentcnt * sizeof(FATxx_dir_entry_t); 
-	const size_t fat_size_bytes = arch->sectors_in_FAT * sector_size;
-	try {
-		arch->fattable.reserve(fat_size_bytes); // To minimize overcommit
-		arch->fattable.resize(fat_size_bytes);
-	}
-	catch (std::exception&) { // std::length_error, std::bad_alloc, other can be used by custom allocators
-		ArchiveData->OpenResult = E_NO_MEMORY;
-		return nullptr;
-	}
-	// Read FAT table
-	result = read_file(arch->hArchFile, arch->fattable.data(), arch->sectors_in_FAT * sector_size);
-	if (result != arch->sectors_in_FAT * sector_size)
-	{
-		ArchiveData->OpenResult = E_UNKNOWN_FORMAT;
-		return nullptr;
-	}
-
-	// Read root directory
-	arch->counter = 0;
-	arch->arc_dir_entries.clear();
-	CreateFileList(minimal_fixed_string_t<MAX_PATH>{}, 0, arch.get(), 0);
-	arch->arc_dir_entries.shrink_to_fit();
-
-	ArchiveData->OpenResult = 0;// ok
-	return arch.release(); // Returns raw ptr and releases ownership 
-};
-
-int IMG_NextItem(archive_HANDLE arch, tHeaderData* HeaderData)
-{
-	if (arch->counter == arch->arc_dir_entries.size()) { //-V104
-		arch->counter = 0;
-		return E_END_ARCHIVE;
-	}
-
-	strcpy(HeaderData->ArcName, arch->archname);
-	strcpy(HeaderData->FileName, arch->arc_dir_entries[arch->counter].PathName.data());
-	HeaderData->FileAttr = arch->arc_dir_entries[arch->counter].FileAttr;
-	HeaderData->FileTime = arch->arc_dir_entries[arch->counter].FileTime;
-	// For files larger than 2Gb -- implement tHeaderDataEx
-	HeaderData->PackSize = static_cast<int>(arch->arc_dir_entries[arch->counter].FileSize); 
-	HeaderData->UnpSize = HeaderData->PackSize;
-	HeaderData->CmtBuf = 0;
-	HeaderData->CmtBufSize = 0;
-	HeaderData->CmtSize = 0;
-	HeaderData->CmtState = 0;
-	HeaderData->UnpVer = 0;
-	HeaderData->Method = 0;
-	HeaderData->FileCRC = 0;
-	arch->counter++;
-	return 0;//ok
-};
-
-int IMG_Process(archive_HANDLE hArcData, int Operation, const char* DestPath, const char* DestName)
-{
-	tArchive* arch = hArcData;
-	char dest[MAX_PATH] = "";
-	file_handle_t hUnpFile;
-
-	if (Operation == PK_SKIP ) return 0;
-
-	if( arch->counter == 0 ) 
-		return E_END_ARCHIVE;
-	// if (newentry->FileAttr & ATTR_DIRECTORY) return 0;
-
-	if (Operation == PK_TEST) {
-		auto res = get_temp_filename(dest, "FIM");		
-		if (!res) {
-			return E_ECREATE;
+		else {
+			return 0;
 		}
 	}
 	else {
-		if (DestPath) strcpy(dest, DestPath);
-		if (DestName) strcat(dest, DestName);
+		return 0;
 	}
+}
+using archive_HANDLE = tArchive*;
 
-	if (Operation == PK_TEST) {
-		hUnpFile = open_file_overwrite(dest);
-	}
-	else {
-		hUnpFile = open_file_write(dest);
-	}
-	if (hUnpFile == file_open_error_v) 
-		return E_ECREATE;
-
-	auto res = arch->extract_to_file(hUnpFile, arch->counter - 1);
-	if (res != 0) {
-		return res;
-	}
-	const auto& cur_entry = arch->arc_dir_entries[arch->counter-1];
-	set_file_datetime(hUnpFile, cur_entry.FileTime);
-	close_file(hUnpFile);
-	set_file_attributes(dest, cur_entry.FileAttr);
-
-	if (Operation == PK_TEST) {
-		delete_file(dest);
-	}
-
-	return 0; 
-};
-
-int IMG_Close(archive_HANDLE hArcData)
-{
-	delete hArcData;
-	return 0;// ok
-};
-
-void IMG_SetCallBackVol(archive_HANDLE hArcData, tChangeVolProc pChangeVolProc)
-{
-	hArcData->pLocChangeVol = pChangeVolProc;
-};
-
-void IMG_SetCallBackProc(archive_HANDLE hArcData, tProcessDataProc pProcessDataProc)
-{
-	hArcData->pLocProcessData = pProcessDataProc;
-};
-
+//--------End of  IMG Definitions-------------
 
 //-----------------------=[ DLL exports ]=--------------------
 
@@ -758,36 +679,143 @@ extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
-		return IMG_Open(ArchiveData);
+		std::unique_ptr<tArchive> arch; // TCmd API expects HANDLE/raw pointer,
+										// so smart pointer is used to manage cleanup on errors 
+										// only inside this function
+		//! Not used by TCmd yet.
+		ArchiveData->CmtBuf = 0;
+		ArchiveData->CmtBufSize = 0;
+		ArchiveData->CmtSize = 0;
+		ArchiveData->CmtState = 0;
+
+		auto hArchFile = open_file_shared_read(ArchiveData->ArcName);
+		if (hArchFile == file_open_error_v)
+		{
+			ArchiveData->OpenResult = E_EOPEN;
+			return nullptr;
+		}
+		try {
+			arch = std::make_unique<tArchive>(winAPI_msgbox_on_bad_BPB, ArchiveData->ArcName,
+				hArchFile, ArchiveData->OpenMode);
+		}
+		catch (std::bad_alloc&) {
+			ArchiveData->OpenResult = E_NO_MEMORY;
+			return nullptr;
+		}
+
+		auto err_code = arch->process_bootsector();
+		if (err_code != 0) {
+			ArchiveData->OpenResult = err_code;
+			return nullptr;
+		}
+
+		err_code = arch->load_FAT();
+		if (err_code != 0) {
+			ArchiveData->OpenResult = err_code;
+			return nullptr;
+		}
+
+		err_code = arch->load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
+		if (err_code != 0) {
+			ArchiveData->OpenResult = err_code;
+			return nullptr;
+		}
+
+		ArchiveData->OpenResult = 0; // OK
+		return arch.release(); // Returns raw ptr and releases ownership 
 	}
 
 	// TCmd calls ReadHeader to find out what files are in the archive
 	DLLEXPORT int STDCALL ReadHeader(archive_HANDLE hArcData, tHeaderData* HeaderData)
 	{
-		return IMG_NextItem(hArcData, HeaderData);
+		if (hArcData->counter == hArcData->arc_dir_entries.size()) { //-V104
+			hArcData->counter = 0;
+			return E_END_ARCHIVE;
+		}
+
+		strcpy(HeaderData->ArcName, hArcData->archname.data());
+		strcpy(HeaderData->FileName, hArcData->arc_dir_entries[hArcData->counter].PathName.data());
+		HeaderData->FileAttr = hArcData->arc_dir_entries[hArcData->counter].FileAttr;
+		HeaderData->FileTime = hArcData->arc_dir_entries[hArcData->counter].FileTime;
+		// For files larger than 2Gb -- implement tHeaderDataEx
+		HeaderData->PackSize = static_cast<int>(hArcData->arc_dir_entries[hArcData->counter].FileSize);
+		HeaderData->UnpSize = HeaderData->PackSize;
+		HeaderData->CmtBuf = 0;
+		HeaderData->CmtBufSize = 0;
+		HeaderData->CmtSize = 0;
+		HeaderData->CmtState = 0;
+		HeaderData->UnpVer = 0;
+		HeaderData->Method = 0;
+		HeaderData->FileCRC = 0;
+		hArcData->counter++;
+		return 0; // OK
 	}
 
 	// ProcessFile should unpack the specified file or test the integrity of the archive
 	DLLEXPORT int STDCALL ProcessFile(archive_HANDLE hArcData, int Operation, char* DestPath, char* DestName) //-V2009
 	{
-		return IMG_Process(hArcData, Operation, DestPath, DestName);
+		tArchive* arch = hArcData;
+		char dest[MAX_PATH] = "";
+		file_handle_t hUnpFile;
+
+		if (Operation == PK_SKIP) return 0;
+
+		if (arch->counter == 0)
+			return E_END_ARCHIVE;
+		// if (newentry->FileAttr & ATTR_DIRECTORY) return 0;
+
+		if (Operation == PK_TEST) {
+			auto res = get_temp_filename(dest, "FIM");
+			if (!res) {
+				return E_ECREATE;
+			}
+		}
+		else {
+			if (DestPath) strcpy(dest, DestPath);
+			if (DestName) strcat(dest, DestName);
+		}
+
+		if (Operation == PK_TEST) {
+			hUnpFile = open_file_overwrite(dest);
+		}
+		else {
+			hUnpFile = open_file_write(dest);
+		}
+		if (hUnpFile == file_open_error_v)
+			return E_ECREATE;
+
+		auto res = arch->extract_to_file(hUnpFile, arch->counter - 1);
+		if (res != 0) {
+			return res;
+		}
+		const auto& cur_entry = arch->arc_dir_entries[arch->counter - 1];
+		set_file_datetime(hUnpFile, cur_entry.FileTime);
+		close_file(hUnpFile);
+		set_file_attributes(dest, cur_entry.FileAttr);
+
+		if (Operation == PK_TEST) {
+			delete_file(dest);
+		}
+
+		return 0;
 	}
 
 	// CloseArchive should perform all necessary operations when an archive is about to be closed
 	DLLEXPORT int STDCALL CloseArchive(archive_HANDLE hArcData)
 	{
-		return IMG_Close(hArcData);
+		delete hArcData;
+		return 0; // OK
 	}
 
 	// This function allows you to notify user about changing a volume when packing files
 	DLLEXPORT void STDCALL SetChangeVolProc(archive_HANDLE hArcData, tChangeVolProc pChangeVolProc)
 	{
-		IMG_SetCallBackVol(hArcData, pChangeVolProc);
+		hArcData->pLocChangeVol = pChangeVolProc;
 	}
 
 	// This function allows you to notify user about the progress when you un/pack files
 	DLLEXPORT void STDCALL SetProcessDataProc(archive_HANDLE hArcData, tProcessDataProc pProcessDataProc)
 	{
-		IMG_SetCallBackProc(hArcData, pProcessDataProc);
+		hArcData->pLocProcessData = pProcessDataProc;
 	}
 }
