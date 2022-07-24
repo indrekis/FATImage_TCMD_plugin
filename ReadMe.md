@@ -1,22 +1,25 @@
 Introduction
 ============
 
-This project is intended to create a plugin supporting access to the floppy disk images for the modern TCmd.
-IMG Plugin for Total Commander (TCmd) by IvGzury is a good plugin for such tasks. But it was never ported to the 64-bit TCmd. 
-So II started porting img version 0.9 for which sources were available. 
+This project is intended to create a plugin for 64-bit Total Commander (TCmd) supporting access to the floppy disk images and FAT images in general.
+There are several such good plugins for the 32-bit TCmd, but none (to the best of my knowledge) for the 64-bit TCmd. 
+IMG Plugin for Total Commander (TCmd) by IvGzury was used as a starting point because its sources were available.
 
 Original [img readme](orig_img_read.txt)
 
 Installation
 ============
 
-As for now repository contains compiled binaries of the plugins too (img.wcx and img.wcx64), though, the 32-bit version is 
-not thoroughly tested. Installation-ready archives will be provided in the future. 
+As usual for the TCmd. Works in Double Commander for Windows.
+
+Compilation
+===========
+
+Code can be compiled using the Visual Studio project or CMakeLists.txt (tested using MSVC and MinGW). Uses C++20, with no external dependencies.
 
 Problems
 ========
 * Read-only
 * Only FAT12
-* Only 1 sector per cluster
 * No support for long filenames
-* Problems with directories data, time and attributes
+* Directories data, time, and some attributes are not set properly

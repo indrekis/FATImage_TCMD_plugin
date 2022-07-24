@@ -374,3 +374,8 @@ FodyWeavers.xsd
 /b64gcc
 /b32msvc
 /b64msvc
+/distr
+/b32
+/b64
+/img.wcx64
+/img.wcx

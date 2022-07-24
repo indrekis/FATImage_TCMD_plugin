@@ -41,9 +41,9 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "Comments", "FAT image unpacking plugin for Windows Commander"
+            VALUE "Comments", "FAT image unpacking plugin for Total Commander"
             VALUE "CompanyName", "Indrekis"
-            VALUE "FileDescription", "FAT images wcx plugin for Windows Commander"
+            VALUE "FileDescription", "FAT images wcx plugin for Total Commander"
             VALUE "FileVersion", "0.9.9.0"
             VALUE "InternalName", "N/A"
             VALUE "LegalCopyright", "Copyright © 2022 by Oleg Farenyuk, 2002 by IvGzury"
