@@ -7,7 +7,7 @@ project(l17_fixed_string)
 
 set(CMAKE_CXX_STANDARD 20)
 
-set(SOURCE_FILES IMGwcx.cpp resource.h wcxhead.h main_resources.rc)
+set(SOURCE_FILES FAT_definitions.cpp  FAT_definitions.h  IMGwcx.cpp  minimal_fixed_string.h  resource.h  sysio_winapi.cpp  sysio_winapi.h  sysui_winapi.cpp  sysui_winapi.h  wcxhead.h main_resources.rc)
 
 add_library(IMGwcx64 SHARED ${SOURCE_FILES} )
 set_target_properties(IMGwcx64 PROPERTIES OUTPUT_NAME img)

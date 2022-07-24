@@ -1,0 +1,92 @@
+#include "sysio_winapi.h"
+
+file_handle_t open_file_shared_read(const char* filename) {
+	file_handle_t handle;
+	handle = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+	return handle;
+}
+
+file_handle_t open_file_write(const char* filename) {
+	file_handle_t handle;
+	handle = CreateFile(filename, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
+	return handle;
+}
+
+file_handle_t open_file_overwrite(const char* filename) {
+	file_handle_t handle;
+	handle = CreateFile(filename, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
+	return handle;
+}
+
+//! Returns true if success
+bool close_file(file_handle_t handle) {
+	return CloseHandle(handle);
+}
+
+bool delete_file(const char* filename) {
+	return DeleteFile(filename);
+}
+
+bool get_temp_filename(char* buff, const char prefix[]) {
+	char dest_path[MAX_PATH];
+	auto dwRetVal = GetTempPath(MAX_PATH,  // length of the buffer
+		dest_path); // buffer for path 
+	if (dwRetVal > MAX_PATH || (dwRetVal == 0))
+	{
+		return false;
+	}
+	dwRetVal = GetTempFileName(dest_path, // directory for tmp files
+		prefix,     // temp file name prefix -- 3 bytes used only
+		0,                // create unique name 
+		buff);  // buffer for name 
+	if (dwRetVal == 0) {
+		return false;
+	}
+	return true;
+}
+
+//! Returns true if success
+bool set_file_pointer(file_handle_t handle, size_t offset) {
+	LARGE_INTEGER offs;
+	offs.QuadPart = offset;
+	return SetFilePointerEx(handle, offs, nullptr, FILE_BEGIN);
+}
+
+size_t read_file(file_handle_t handle, void* buffer_ptr, size_t size) {
+	bool res;
+	DWORD result = 0;
+	res = ReadFile(handle, buffer_ptr, static_cast<DWORD>(size), &result, nullptr); //-V2001
+	if (!res) {
+		return static_cast<size_t>(-1);
+	}
+	else {
+		return static_cast<size_t>(result);
+	}
+}
+
+size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t size) {
+	bool res;
+	DWORD result = 0;
+	res = WriteFile(handle, buffer_ptr, static_cast<DWORD>(size), &result, nullptr); //-V2001
+	if (!res) {
+		return static_cast<size_t>(-1);
+	}
+	else {
+		return static_cast<size_t>(result);
+	}
+}
+
+bool set_file_datetime(file_handle_t handle, uint32_t file_datetime)
+{
+	FILETIME LocTime, GlobTime;
+	DosDateTimeToFileTime(static_cast<uint16_t>(file_datetime >> 16),
+		static_cast<uint16_t>(file_datetime & static_cast<uint32_t>(0xFFFF)),
+		&LocTime);
+	LocalFileTimeToFileTime(&LocTime, &GlobTime);
+	SetFileTime(handle, nullptr, nullptr, &GlobTime);
+	return true; // TODO: Add error handling
+}
+
+bool set_file_attributes(const char* filename, uint32_t attribute){
+	return SetFileAttributes(filename, attribute);
+}
