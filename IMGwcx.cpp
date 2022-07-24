@@ -48,33 +48,33 @@ BOOL APIENTRY DllMain(HANDLE hModule,
 }
 
 //----------------I/O functions ---------------
-static const auto file_open_error_v = INVALID_HANDLE_VALUE;
+const auto file_open_error_v = INVALID_HANDLE_VALUE;
 using file_handle_t = HANDLE;
 
-static file_handle_t open_file_shared_read(const char* filename) {
+file_handle_t open_file_shared_read(const char* filename) {
 	file_handle_t handle;
 	handle = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
 	return handle;
 }
 
-static file_handle_t open_file_write(const char* filename) {
+file_handle_t open_file_write(const char* filename) {
 	file_handle_t handle;
 	handle = CreateFile(filename, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
 	return handle;
 }
 
-static file_handle_t open_file_overwrite(const char* filename) {
+file_handle_t open_file_overwrite(const char* filename) {
 	file_handle_t handle;
 	handle = CreateFile(filename, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
 	return handle;
 }
 
 //! Returns true if success
-static bool close_file(file_handle_t handle) {
+bool close_file(file_handle_t handle) {
 	return CloseHandle(handle);
 }
 
-static bool delete_file(const char* filename) {
+bool delete_file(const char* filename) {
 	return DeleteFile(filename);
 }
 
@@ -97,13 +97,13 @@ bool get_temp_filename(char* buff, const char prefix[]) {
 }
 
 //! Returns true if success
-static bool set_file_pointer(file_handle_t handle, size_t offset) {
+bool set_file_pointer(file_handle_t handle, size_t offset) {
 	LARGE_INTEGER offs;
 	offs.QuadPart = offset;
 	return SetFilePointerEx(handle, offs, nullptr, FILE_BEGIN);
 }
 
-static size_t read_file(file_handle_t handle, void* buffer_ptr, size_t size) {
+size_t read_file(file_handle_t handle, void* buffer_ptr, size_t size) {
 	bool res;
 	DWORD result = 0;
 	res = ReadFile(handle, buffer_ptr, static_cast<DWORD>(size), &result, nullptr); //-V2001
@@ -115,7 +115,7 @@ static size_t read_file(file_handle_t handle, void* buffer_ptr, size_t size) {
 	}
 }
 
-static size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t size) {
+size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t size) {
 	bool res;
 	DWORD result = 0;
 	res = WriteFile(handle, buffer_ptr, static_cast<DWORD>(size), &result, nullptr); //-V2001
@@ -127,7 +127,7 @@ static size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t si
 	}
 }
 
-static bool set_file_datetime(file_handle_t handle, uint32_t file_datetime)
+bool set_file_datetime(file_handle_t handle, uint32_t file_datetime)
 {
 	FILETIME LocTime, GlobTime;
 	DosDateTimeToFileTime(static_cast<uint16_t>(file_datetime >> 16),
@@ -419,11 +419,11 @@ struct arc_dir_entry_t
 	uint32_t FirstClus;
 };
 
-struct tArchive
+struct archive_t
 {
 	static constexpr size_t sector_size = 512;
 	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
-	using on_bad_BPB_callback_t = int(*)(tArchive*, int openmode);
+	using on_bad_BPB_callback_t = int(*)(archive_t*, int openmode);
 	on_bad_BPB_callback_t on_bad_BPB_callback = nullptr;
 	int openmode_m = PK_OM_LIST;
 	file_handle_t hArchFile = file_handle_t();    //opened file handle
@@ -440,15 +440,15 @@ struct tArchive
 	tChangeVolProc   pLocChangeVol = nullptr;
 	tProcessDataProc pLocProcessData = nullptr;
 
-	tArchive(const tArchive&) = delete;
-	tArchive& operator=(const tArchive&) = delete;
+	archive_t(const archive_t&) = delete;
+	archive_t& operator=(const archive_t&) = delete;
 
-	tArchive(on_bad_BPB_callback_t clb, const char* arcnm, file_handle_t fh, int openmode) :
+	archive_t(on_bad_BPB_callback_t clb, const char* arcnm, file_handle_t fh, int openmode) :
 		archname(arcnm), on_bad_BPB_callback(clb), openmode_m(openmode), hArchFile(fh)
 	{
 	}
 
-	~tArchive() {
+	~archive_t() {
 		if (hArchFile)
 			close_file(hArchFile);
 	}
@@ -669,7 +669,7 @@ struct tArchive
 	}	
 };
 
-int winAPI_msgbox_on_bad_BPB(tArchive*, int openmode) {
+int winAPI_msgbox_on_bad_BPB(archive_t*, int openmode) {
 	if (openmode == PK_OM_LIST) {
 		//! Is it correct to create own dialogs in plugin?
 		int msgboxID = MessageBoxEx(
@@ -690,7 +690,7 @@ int winAPI_msgbox_on_bad_BPB(tArchive*, int openmode) {
 		return 0;
 	}
 }
-using archive_HANDLE = tArchive*;
+using archive_HANDLE = archive_t*;
 
 //--------End of  IMG Definitions-------------
 
@@ -700,7 +700,7 @@ extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
-		std::unique_ptr<tArchive> arch; // TCmd API expects HANDLE/raw pointer,
+		std::unique_ptr<archive_t> arch; // TCmd API expects HANDLE/raw pointer,
 										// so smart pointer is used to manage cleanup on errors 
 										// only inside this function
 		//! Not used by TCmd yet.
@@ -716,7 +716,7 @@ extern "C" {
 			return nullptr;
 		}
 		try {
-			arch = std::make_unique<tArchive>(winAPI_msgbox_on_bad_BPB, ArchiveData->ArcName,
+			arch = std::make_unique<archive_t>(winAPI_msgbox_on_bad_BPB, ArchiveData->ArcName,
 				hArchFile, ArchiveData->OpenMode);
 		}
 		catch (std::bad_alloc&) {
@@ -775,7 +775,7 @@ extern "C" {
 	// ProcessFile should unpack the specified file or test the integrity of the archive
 	DLLEXPORT int STDCALL ProcessFile(archive_HANDLE hArcData, int Operation, char* DestPath, char* DestName) //-V2009
 	{
-		tArchive* arch = hArcData;
+		archive_t* arch = hArcData;
 		char dest[MAX_PATH] = "";
 		file_handle_t hUnpFile;
 
