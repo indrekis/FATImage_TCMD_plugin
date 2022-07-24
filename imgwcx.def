@@ -1,7 +1,0 @@
-EXPORTS
-	OpenArchive
-	ReadHeader
-	ProcessFile
-	CloseArchive
-	SetChangeVolProc
-	SetProcessDataProc

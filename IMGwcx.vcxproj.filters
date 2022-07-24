@@ -28,11 +28,6 @@
     <Text Include="ReadMe.md" />
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="imgwcx.def">
-      <Filter>Source Files</Filter>
-    </CustomBuild>
-  </ItemGroup>
-  <ItemGroup>
     <ResourceCompile Include="main_resources.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
