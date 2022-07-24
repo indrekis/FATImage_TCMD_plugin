@@ -41,16 +41,16 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "Comments", "1.44 Floppy image unpacking plugin for Windows Commander"
+            VALUE "Comments", "FAT image unpacking plugin for Windows Commander"
             VALUE "CompanyName", "Indrekis"
-            VALUE "FileDescription", "FDD images wcx plugin for Windows Commander"
+            VALUE "FileDescription", "FAT images wcx plugin for Windows Commander"
             VALUE "FileVersion", "0.9.9.0"
             VALUE "InternalName", "N/A"
             VALUE "LegalCopyright", "Copyright © 2022 by Oleg Farenyuk, 2002 by IvGzury"
             VALUE "LegalTrademarks", "N/A"
             VALUE "OriginalFilename", "img.wcx64"
             VALUE "PrivateBuild", "N/A"
-            VALUE "ProductName", "TCmd FDD images wcx plugin"
+            VALUE "ProductName", "TCmd FAT images wcx plugin"
             VALUE "ProductVersion", "0.99 beta"
             VALUE "SpecialBuild", "N/A"
         END
