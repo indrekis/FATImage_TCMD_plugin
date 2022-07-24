@@ -432,20 +432,18 @@ struct tArchive
 	std::vector<arc_dir_entry_t> arc_dir_entries;
 	tFAT12BootSec bootsec{};
 
-	size_t rootarea_off = 0; //number of uint8_t before root area 
-	size_t dataarea_off = 0; //number of uint8_t before data area
-	uint32_t rootentcnt = 0;
-	uint32_t sectors_in_FAT = 0; 
-	uint32_t cluster_size = 0; 
+	size_t rootarea_off_m = 0; //number of uint8_t before root area 
+	size_t dataarea_off_m = 0; //number of uint8_t before data area
+	uint32_t cluster_size_m = 0;
 	uint32_t counter = 0;
 
-	tChangeVolProc   pLocChangeVol   = nullptr;
+	tChangeVolProc   pLocChangeVol = nullptr;
 	tProcessDataProc pLocProcessData = nullptr;
 
 	tArchive(const tArchive&) = delete;
 	tArchive& operator=(const tArchive&) = delete;
 
-	tArchive(on_bad_BPB_callback_t clb, const char* arcnm, file_handle_t fh, int openmode):
+	tArchive(on_bad_BPB_callback_t clb, const char* arcnm, file_handle_t fh, int openmode) :
 		archname(arcnm), on_bad_BPB_callback(clb), openmode_m(openmode), hArchFile(fh)
 	{
 	}
@@ -456,44 +454,67 @@ struct tArchive
 	}
 
 	size_t cluster_to_file_off(uint32_t cluster) {
-		return dataarea_off + static_cast<size_t>(cluster - 2) * cluster_size;
+		return get_data_area_offset() + static_cast<size_t>(cluster - 2) * get_cluster_size(); //-V104
+	}
+
+	uint32_t get_sectors_per_FAT() const {
+		return bootsec.BPB_SectorsPerFAT;
+	}
+
+	uint32_t get_bytes_per_FAT() const {
+		return get_sectors_per_FAT() * sector_size;
+	}
+
+	uint32_t get_root_dir_entry_count() const {
+		return bootsec.BPB_RootEntCnt;
+	}
+
+	size_t get_root_dir_size() const {
+		return get_data_area_offset() - get_root_area_offset(); //-V110
+	}
+
+	size_t get_root_area_offset() const {
+		return rootarea_off_m;
+	}
+
+	size_t get_data_area_offset() const {
+		return dataarea_off_m;
+	}
+
+	uint32_t get_cluster_size() const {
+		return cluster_size_m;
 	}
 
 	int process_bootsector() {
 		auto result = read_file(hArchFile, &bootsec, sector_size);
-		if (result != sector_size)
-		{
+		if (result != sector_size) {
 			return E_EREAD;
 		}
 
-		if (bootsec.BPB_bytesPerSec != sector_size)
-		{
+		if (bootsec.BPB_bytesPerSec != sector_size) {
 			return E_UNKNOWN_FORMAT;
 		}
 
-		if (bootsec.signature != 0xAA55)
-		{
+		if (bootsec.signature != 0xAA55) {
 			int res = on_bad_BPB_callback(this, openmode_m);
 			if (res != 0) {
 				return res;
 			}
 		}
 
-		sectors_in_FAT = bootsec.BPB_SectorsPerFAT; // TODO: remove sectors_in_FAT and other
-		if ((sectors_in_FAT < 1) || (sectors_in_FAT > 12)) // FAT12 Only
+		if ((get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 12)) // FAT12 Only
 		{
 			return E_UNKNOWN_FORMAT;
 		}
-		rootentcnt = bootsec.BPB_RootEntCnt;
-		cluster_size = sector_size * bootsec.BPB_SecPerClus;
-		rootarea_off = sector_size * (bootsec.BPB_RsvdSecCnt +
-			sectors_in_FAT * static_cast<size_t>(bootsec.BPB_NumFATs));
-		dataarea_off = rootarea_off + rootentcnt * sizeof(FATxx_dir_entry_t);
+		cluster_size_m = sector_size * bootsec.BPB_SecPerClus;
+		rootarea_off_m = sector_size * (bootsec.BPB_RsvdSecCnt +
+			get_sectors_per_FAT() * static_cast<size_t>(bootsec.BPB_NumFATs));
+		dataarea_off_m = get_root_area_offset() + get_root_dir_entry_count() * sizeof(FATxx_dir_entry_t);
 		return 0;
 	}
 
 	int load_FAT() {
-		const size_t fat_size_bytes = sectors_in_FAT * sector_size;
+		const size_t fat_size_bytes = get_bytes_per_FAT();
 		try {
 			fattable.reserve(fat_size_bytes); // To minimize overcommit
 			fattable.resize(fat_size_bytes);
@@ -502,10 +523,10 @@ struct tArchive
 			return E_NO_MEMORY;
 		}
 		// Read FAT table
-		auto result = read_file(hArchFile, fattable.data(), sectors_in_FAT * tArchive::sector_size);
-		if (result != sectors_in_FAT * sector_size)
+		auto result = read_file(hArchFile, fattable.data(), fat_size_bytes);
+		if (result != fat_size_bytes)
 		{
-			return E_UNKNOWN_FORMAT;
+			return E_EREAD;
 		}
 		return 0;
 	}
@@ -515,7 +536,7 @@ struct tArchive
 			const auto& cur_entry = arc_dir_entries[idx];
 			uint32_t nextclus = cur_entry.FirstClus;
 			size_t remaining = cur_entry.FileSize;
-			std::vector<char> buff(cluster_size);
+			std::vector<char> buff(get_cluster_size());
 			while (remaining > 0)
 			{
 				if ((nextclus <= 1) || (nextclus >= 0xFF0))
@@ -524,7 +545,7 @@ struct tArchive
 					return E_UNKNOWN_FORMAT;
 				}
 				set_file_pointer(hArchFile, cluster_to_file_off(nextclus));
-				size_t towrite = std::min<size_t>(cluster_size, remaining);
+				size_t towrite = std::min<size_t>(get_cluster_size(), remaining);
 				size_t result = read_file(hArchFile, buff.data(), towrite);
 				if (result != towrite)
 				{
@@ -537,7 +558,7 @@ struct tArchive
 					close_file(hUnpFile);
 					return E_EWRITE;
 				}
-				if (remaining > cluster_size) { remaining -= cluster_size; } //-V104 //-V101
+				if (remaining > get_cluster_size()) { remaining -= get_cluster_size(); } //-V104 //-V101
 				else { remaining = 0; }
 
 				nextclus = next_cluster_FAT12(nextclus);
@@ -559,12 +580,12 @@ struct tArchive
 		size_t portion_size = 0;
 		if (firstclus == 0)
 		{   // Read whole FAT12/16 dir at once
-			set_file_pointer(hArchFile, rootarea_off);
-			portion_size = dataarea_off - rootarea_off; // Size of root dir
+			set_file_pointer(hArchFile, get_root_area_offset());
+			portion_size = get_root_dir_size();
 		}
 		else {
 			set_file_pointer(hArchFile, cluster_to_file_off(firstclus));
-			portion_size = static_cast<size_t>(cluster_size);
+			portion_size = static_cast<size_t>(get_cluster_size());
 		}
 		size_t records_number = portion_size / sizeof(FATxx_dir_entry_t);
 		std::unique_ptr<FATxx_dir_entry_t[]> sector;
@@ -640,7 +661,7 @@ struct tArchive
 
 	uint32_t next_cluster_FAT12(uint32_t firstclus)
 	{
-		const auto FAT_byte_pre = fattable.data() + ((firstclus * 3) >> 1); // firstclus + firstclus/2
+		const auto FAT_byte_pre = fattable.data() + ((firstclus * 3) >> 1); // firstclus + firstclus/2 //-V104
 		//! Extract word, containing next cluster:
 		const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
 		// Extract correct 12 bits -- lower for odd, upper for even: 
