@@ -14,6 +14,7 @@
 */
 
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
+#define NOMINMAX
 #include <windows.h>
 
 #include "wcxhead.h"
@@ -22,6 +23,7 @@
 #include <cstddef>
 #include <vector>
 #include <array>
+#include <algorithm>
 #include <cassert>
 using std::nothrow, std::uint8_t;
 
@@ -125,7 +127,16 @@ static size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t si
 	}
 }
 
-
+static bool set_file_datetime(file_handle_t handle, uint32_t file_datetime)
+{
+	FILETIME LocTime, GlobTime;
+	DosDateTimeToFileTime(static_cast<uint16_t>(file_datetime >> 16),
+		static_cast<uint16_t>(file_datetime & static_cast<uint32_t>(0xFFFF)),
+		&LocTime);
+	LocalFileTimeToFileTime(&LocTime, &GlobTime);
+	SetFileTime(handle, nullptr, nullptr, &GlobTime);
+	return true; // TODO: Add error handling
+}
 
 //----------------Tools-------------------------
 static uint32_t combine(uint16_t hi, uint16_t lo) {
@@ -417,6 +428,58 @@ struct tArchive
 		if (hArchFile)
 			close_file(hArchFile);
 	}
+
+	size_t cluster_to_file_off(uint32_t cluster) {
+		return dataarea_off + static_cast<size_t>(cluster - 2) * cluster_size;
+	}
+
+	int extract_to_file(file_handle_t hUnpFile, uint32_t idx) {	
+		try { // For bad allocation
+			const auto& cur_entry = arc_dir_entries[idx];
+			uint32_t nextclus = cur_entry.FirstClus;
+			size_t remaining = cur_entry.FileSize;
+			std::vector<char> buff(cluster_size);
+			while (remaining > 0)
+			{
+				if ((nextclus <= 1) || (nextclus >= 0xFF0))
+				{
+					close_file(hUnpFile);
+					return E_UNKNOWN_FORMAT;
+				}
+				set_file_pointer(hArchFile, cluster_to_file_off(nextclus));
+				size_t towrite = std::min<size_t>(cluster_size, remaining);
+				size_t result = read_file(hArchFile, buff.data(), towrite);
+				if (result != towrite)
+				{
+					close_file(hUnpFile);
+					return E_EREAD;
+				}
+				result = write_file(hUnpFile, buff.data(), towrite);
+				if (result != towrite)
+				{
+					close_file(hUnpFile);
+					return E_EWRITE;
+				}
+				if (remaining > cluster_size) { remaining -= cluster_size; } //-V104 //-V101
+				else { remaining = 0; }
+
+				nextclus = next_cluster_FAT12(nextclus);
+			}
+			return 0;
+		}
+		catch (std::bad_alloc&) {
+			return E_NO_MEMORY;
+		}
+	}
+
+	uint32_t next_cluster_FAT12(uint32_t firstclus)
+	{
+		const auto FAT_byte_pre = fattable.data() + ((firstclus * 3) >> 1); // firstclus + firstclus/2
+		//! Extract word, containing next cluster:
+		const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
+		// Extract correct 12 bits -- lower for odd, upper for even: 
+		return ((*word_ptr) >> ((firstclus % 2) ? 4 : 0)) & 0x0FFF; //-V112
+	}
 };
 
 using myHANDLE = tArchive*;
@@ -425,16 +488,7 @@ using myHANDLE = tArchive*;
 
 //------------------=[ "Kernel" ]=-------------
 
-size_t next_cluster_FAT12(size_t firstclus, const tArchive* arch)
-{
-	const auto FAT_byte_pre = arch->fattable.data() + ((firstclus * 3) >> 1); // firstclus + firstclus/2
-	//! Extract word, containing next cluster:
-	const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
-	// Extract correct 12 bits -- lower for odd, upper for even: 
-	return ( (*word_ptr) >> (( firstclus % 2) ? 4 : 0) ) & 0x0FFF; //-V112
-}
-
-// root -- by copy to avoid problems while relocating vector
+// root passed by copy to avoid problems while relocating vector
 int CreateFileList(minimal_fixed_string_t<MAX_PATH> root, size_t firstclus, tArchive* arch, DWORD depth) //-V813
 {		
 	size_t portion_size = 0;
@@ -495,7 +549,7 @@ int CreateFileList(minimal_fixed_string_t<MAX_PATH> root, size_t firstclus, tArc
 			break;
 		}
 		else {
-			firstclus = next_cluster_FAT12(firstclus, arch);
+			firstclus = arch->next_cluster_FAT12(firstclus);
 			if ((firstclus <= 1) || (firstclus >= 0xFF0)) { return 0; }
 			set_file_pointer(arch->hArchFile, arch->dataarea_off + static_cast<size_t>(firstclus - 2) * arch->cluster_size); //-V104
 		}
@@ -637,11 +691,7 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 {
 	tArchive* arch = hArcData;
 	char dest[MAX_PATH] = "";
-	HANDLE hUnpFile;
-	size_t nextclus;
-	size_t remaining;
-	size_t towrite;
-	FILETIME LocTime, GlobTime;
+	file_handle_t hUnpFile;
 
 	if (Operation == PK_SKIP ) return 0;
 
@@ -660,14 +710,6 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 		if (DestName) strcat(dest, DestName);
 	}
 
-	std::unique_ptr<char[]> buff;
-	try {
-		buff = std::make_unique<char[]>( static_cast<size_t>(arch->cluster_size));
-	}
-	catch (std::bad_alloc& ) {
-		return E_NO_MEMORY;
-	}
-
 	if (Operation == PK_TEST) {
 		hUnpFile = open_file_overwrite(dest);
 	}
@@ -677,50 +719,19 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	if (hUnpFile == file_open_error_v) 
 		return E_ECREATE;
 
-	const auto& cur_entry = arch->arc_dir_entries[arch->counter-1];
-	nextclus = cur_entry.FirstClus; //-V101
-	remaining = cur_entry.FileSize;
-	while (remaining > 0)
-	{
-		if ((nextclus <= 1) || (nextclus >= 0xFF0))
-		{
-			close_file(hUnpFile);
-			return E_UNKNOWN_FORMAT;
-		}
-		set_file_pointer(arch->hArchFile, arch->dataarea_off + static_cast<size_t>(nextclus - 2) * arch->cluster_size); //-V104
-		towrite = (remaining > arch->cluster_size) ? (arch->cluster_size) : (remaining); //-V101 //-V105 //-V104
-		size_t result = read_file(arch->hArchFile, buff.get(), towrite);
-		if (result != towrite)
-		{
-			close_file(hUnpFile);
-			return E_EREAD;
-		}
-		result = write_file(hUnpFile, buff.get(), towrite);
-		if (result != towrite)
-		{
-			close_file(hUnpFile);
-			return E_EWRITE;
-		}
-		if (remaining > arch->cluster_size) { remaining -= arch->cluster_size; } //-V104 //-V101
-		else { remaining = 0; }
-
-		nextclus = next_cluster_FAT12(nextclus, arch);
+	auto res = arch->extract_to_file(hUnpFile, arch->counter - 1);
+	if (res != 0) {
+		return res;
 	}
-
-	// set file time
-	DosDateTimeToFileTime(static_cast<uint16_t>(static_cast<uint32_t>(cur_entry.FileTime) >> 16),
-		static_cast<uint16_t>(static_cast<uint32_t>(cur_entry.FileTime) & static_cast<uint32_t>(0xFFFF)),
-		&LocTime);
-	LocalFileTimeToFileTime(&LocTime, &GlobTime);
-	SetFileTime(hUnpFile, nullptr, nullptr, &GlobTime);
-
+	const auto& cur_entry = arch->arc_dir_entries[arch->counter-1];
+	set_file_datetime(hUnpFile, cur_entry.FileTime);
 	close_file(hUnpFile);
+	set_file_attributes(dest, cur_entry.FileAttr);
 
 	if (Operation == PK_TEST) {
 		delete_file(dest);
 	}
 
-	set_file_attributes(dest, cur_entry.FileAttr);
 	return 0; 
 };
 
