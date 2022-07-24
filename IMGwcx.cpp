@@ -482,7 +482,7 @@ struct tArchive
 	}
 };
 
-using myHANDLE = tArchive*;
+using archive_HANDLE = tArchive*;
 
 //--------End of  IMG Definitions-------------
 
@@ -560,7 +560,7 @@ int CreateFileList(minimal_fixed_string_t<MAX_PATH> root, size_t firstclus, tArc
 	return 0;
 }
 
-myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
+archive_HANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 {
 	std::unique_ptr<tArchive> arch; // Looks like TCmd API expects HANDLE/raw pointer,
 									// so smart pointer is used to manage cleanup on errors 
@@ -662,7 +662,7 @@ myHANDLE IMG_Open(tOpenArchiveData* ArchiveData)
 	return arch.release(); // Returns raw ptr and releases ownership 
 };
 
-int IMG_NextItem(myHANDLE arch, tHeaderData* HeaderData)
+int IMG_NextItem(archive_HANDLE arch, tHeaderData* HeaderData)
 {
 	if (arch->counter == arch->arc_dir_entries.size()) { //-V104
 		arch->counter = 0;
@@ -687,7 +687,7 @@ int IMG_NextItem(myHANDLE arch, tHeaderData* HeaderData)
 	return 0;//ok
 };
 
-int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const char* DestName)
+int IMG_Process(archive_HANDLE hArcData, int Operation, const char* DestPath, const char* DestName)
 {
 	tArchive* arch = hArcData;
 	char dest[MAX_PATH] = "";
@@ -735,18 +735,18 @@ int IMG_Process(myHANDLE hArcData, int Operation, const char* DestPath, const ch
 	return 0; 
 };
 
-int IMG_Close(myHANDLE hArcData)
+int IMG_Close(archive_HANDLE hArcData)
 {
 	delete hArcData;
 	return 0;// ok
 };
 
-void IMG_SetCallBackVol(myHANDLE hArcData, tChangeVolProc pChangeVolProc)
+void IMG_SetCallBackVol(archive_HANDLE hArcData, tChangeVolProc pChangeVolProc)
 {
 	hArcData->pLocChangeVol = pChangeVolProc;
 };
 
-void IMG_SetCallBackProc(myHANDLE hArcData, tProcessDataProc pProcessDataProc)
+void IMG_SetCallBackProc(archive_HANDLE hArcData, tProcessDataProc pProcessDataProc)
 {
 	hArcData->pLocProcessData = pProcessDataProc;
 };
@@ -756,37 +756,37 @@ void IMG_SetCallBackProc(myHANDLE hArcData, tProcessDataProc pProcessDataProc)
 
 extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
-	DLLEXPORT myHANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
+	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
 		return IMG_Open(ArchiveData);
 	}
 
 	// TCmd calls ReadHeader to find out what files are in the archive
-	DLLEXPORT int STDCALL ReadHeader(myHANDLE hArcData, tHeaderData* HeaderData)
+	DLLEXPORT int STDCALL ReadHeader(archive_HANDLE hArcData, tHeaderData* HeaderData)
 	{
 		return IMG_NextItem(hArcData, HeaderData);
 	}
 
 	// ProcessFile should unpack the specified file or test the integrity of the archive
-	DLLEXPORT int STDCALL ProcessFile(myHANDLE hArcData, int Operation, char* DestPath, char* DestName) //-V2009
+	DLLEXPORT int STDCALL ProcessFile(archive_HANDLE hArcData, int Operation, char* DestPath, char* DestName) //-V2009
 	{
 		return IMG_Process(hArcData, Operation, DestPath, DestName);
 	}
 
 	// CloseArchive should perform all necessary operations when an archive is about to be closed
-	DLLEXPORT int STDCALL CloseArchive(myHANDLE hArcData)
+	DLLEXPORT int STDCALL CloseArchive(archive_HANDLE hArcData)
 	{
 		return IMG_Close(hArcData);
 	}
 
 	// This function allows you to notify user about changing a volume when packing files
-	DLLEXPORT void STDCALL SetChangeVolProc(myHANDLE hArcData, tChangeVolProc pChangeVolProc)
+	DLLEXPORT void STDCALL SetChangeVolProc(archive_HANDLE hArcData, tChangeVolProc pChangeVolProc)
 	{
 		IMG_SetCallBackVol(hArcData, pChangeVolProc);
 	}
 
 	// This function allows you to notify user about the progress when you un/pack files
-	DLLEXPORT void STDCALL SetProcessDataProc(myHANDLE hArcData, tProcessDataProc pProcessDataProc)
+	DLLEXPORT void STDCALL SetProcessDataProc(archive_HANDLE hArcData, tProcessDataProc pProcessDataProc)
 	{
 		IMG_SetCallBackProc(hArcData, pProcessDataProc);
 	}
