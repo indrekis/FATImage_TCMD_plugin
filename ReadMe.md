@@ -1,7 +1,7 @@
 Introduction
 ============
 
-This project is intended to create a plugin for 64-bit Total Commander (TCmd) supporting access to the floppy disk images and FAT images in general.
+This project is intended to create a wcx (archive) plugin for 64-bit Total Commander (TCmd) supporting access to the floppy disk images and FAT images in general.
 There are several such good plugins for the 32-bit TCmd, but none (to the best of my knowledge) for the 64-bit TCmd. 
 IMG Plugin for Total Commander (TCmd) by IvGzury was used as a starting point because its sources were available.
 
