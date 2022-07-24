@@ -1,4 +1,4 @@
-# cmake -A x64 .. -G"Visual Studio 16"
+# cmake -A x64 .. -G"Visual Studio 16" 
 # cmake -A Win32 .. -G"Visual Studio 16"
 # cmake --build . --config Release
 
@@ -16,3 +16,5 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 8)
 elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 	set_target_properties(IMGwcx64 PROPERTIES SUFFIX .wcx PREFIX "") 	
 endif()
+
+# https://www.ghisler.ch/wiki/index.php?title=Plugins_Automated_Installation
