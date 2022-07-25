@@ -68,6 +68,11 @@ struct arc_dir_entry_t
 	uint32_t FirstClus;
 };
 
+struct plugin_config_t {
+	bool ignore_boot_signature = false;
+	bool use_VFAT = true;
+};
+
 struct archive_t
 {
 	enum FAT_types { unknow_type, FAT12_type, FAT16_type, FAT32_type, exFAT_type };
@@ -93,6 +98,8 @@ struct archive_t
 
 	tChangeVolProc   pLocChangeVol = nullptr;
 	tProcessDataProc pLocProcessData = nullptr;
+
+	plugin_config_t plugin_config;
 
 	archive_t(const archive_t&) = delete;
 	archive_t& operator=(const archive_t&) = delete;
@@ -184,7 +191,7 @@ int archive_t::process_bootsector() {
 		return E_UNKNOWN_FORMAT;
 	}
 
-	if (bootsec.signature != 0xAA55) {
+	if (bootsec.signature != 0xAA55 && !plugin_config.ignore_boot_signature) {
 		int res = on_bad_BPB_callback(this, openmode_m);
 		if (res != 0) {
 			return res;
@@ -379,27 +386,94 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 		return E_EREAD;
 	}
 
+	bool is_processing_LFN_chain = false;
+	minimal_fixed_string_t<MAX_PATH> cur_LFN_name{};
+	uint8_t cur_LFN_CRC = 0;
+	int cur_LFN_record_index = 0;
 	do {
 		size_t entry_in_cluster = 0;
 		while ((entry_in_cluster < records_number) && (!sector[entry_in_cluster].is_dir_record_free()))
 		{
+			if (sector[entry_in_cluster].is_dir_record_longname_part()) {
+				if (plugin_config.use_VFAT) {
+					auto LFN_record = as_LFN_record(&sector[entry_in_cluster]);
+					if (!is_processing_LFN_chain) {
+						if (!LFN_record->is_LFN_record_valid() || !LFN_record->is_first_LFN()) {
+							entry_in_cluster++;
+							continue;
+						}
+						is_processing_LFN_chain = true;
+						cur_LFN_CRC = LFN_record->LFN_DOS_name_CRC;
+						cur_LFN_record_index = 1;
+						cur_LFN_name.clear();
+						LFN_record->dir_LFN_entry_to_ASCII_str(cur_LFN_name);
+					}
+					else {
+						if (!LFN_record->is_LFN_record_valid()) {
+							is_processing_LFN_chain = false;
+							cur_LFN_CRC = 0;
+							cur_LFN_record_index = 0;
+							cur_LFN_name.clear();
+						} else if (LFN_record->is_first_LFN()) { // Should restart processing 
+							cur_LFN_CRC = LFN_record->LFN_DOS_name_CRC;
+							cur_LFN_record_index = 1;
+							cur_LFN_name.clear();
+							LFN_record->dir_LFN_entry_to_ASCII_str(cur_LFN_name);
+						}
+						else if (cur_LFN_CRC != LFN_record->LFN_DOS_name_CRC) {
+							is_processing_LFN_chain = false;
+							cur_LFN_CRC = 0;
+							cur_LFN_record_index = 0;
+							cur_LFN_name.clear();
+						}
+						else {
+							++cur_LFN_record_index;
+							minimal_fixed_string_t<MAX_PATH> next_LFN_part;
+							LFN_record->dir_LFN_entry_to_ASCII_str(next_LFN_part);
+							next_LFN_part.push_back(cur_LFN_name);
+							cur_LFN_name = next_LFN_part;
+						}
+					}
+				}
+				entry_in_cluster++;
+				continue;				
+			}
 			if (sector[entry_in_cluster].is_dir_record_deleted() ||
 				sector[entry_in_cluster].is_dir_record_unknown() ||
 				sector[entry_in_cluster].is_dir_record_volumeID() ||
-				sector[entry_in_cluster].is_dir_record_longname_part() ||
 				sector[entry_in_cluster].is_dir_record_invalid_attr()
 				)
 			{
+				is_processing_LFN_chain = false;
+				cur_LFN_CRC = 0;
+				cur_LFN_record_index = 0;
+				cur_LFN_name.clear();
 				entry_in_cluster++;
 				continue;
 			}
+		
 			arc_dir_entries.emplace_back();
 			auto& newentryref = arc_dir_entries.back();
 			newentryref.FileAttr = sector[entry_in_cluster].DIR_Attr;
 			// TODO: errors handling
 			newentryref.PathName.push_back(root); // OK for empty root
 			newentryref.PathName.push_back('\\');
-			auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
+			if (plugin_config.use_VFAT && is_processing_LFN_chain) {
+				if (cur_LFN_CRC == VFAT_LFN_dir_entry_t::LFN_checksum(sector[entry_in_cluster].DIR_Name)) {
+					newentryref.PathName.push_back(cur_LFN_name);
+				}
+				else {
+					auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
+				}
+				is_processing_LFN_chain = false;
+				cur_LFN_CRC = 0;
+				cur_LFN_record_index = 0;
+				cur_LFN_name.clear();
+			}
+			else {
+				auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
+			}
+
 			newentryref.FileTime = sector[entry_in_cluster].get_file_datetime();
 			newentryref.FileSize = sector[entry_in_cluster].DIR_FileSize;
 			newentryref.FirstClus = get_first_cluster(sector[entry_in_cluster]);

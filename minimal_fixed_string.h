@@ -42,6 +42,10 @@ public:
 		size_m += strnlen_s(data() + size(), capacity() - size());
 		return res;
 	}
+	void clear() {
+		size_m = 0;
+		data_m[size_m] = '\0';
+	}
 };
 
 #endif 

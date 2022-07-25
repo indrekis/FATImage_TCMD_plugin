@@ -81,8 +81,8 @@ struct FAT_attrib_t {
 	bool is_dir() const { return attribute & ATTR_DIRECTORY; }
 
 	bool is_invalid() const {
-		bool res = ((attribute & 0xC8) != 0);
-		res |= ((!is_volumeID()) && ((attribute & ATTR_VOLUME_ID) != 0));
+		bool res = ((attribute & 0xC0) != 0);
+		res |= ((attribute & ATTR_VOLUME_ID) != 0) && (!is_volumeID()) && (!is_longname_part());
 		// Other checks here
 		return res;
 	}
@@ -144,7 +144,7 @@ struct FATxx_dir_entry_t
 	bool is_dir_record_unknown() const {
 		return !(is_dir_record_free()) &&
 			!(is_dir_record_deleted()) &&
-			!ValidChar(DIR_Name[0]);
+			!is_valid_char(DIR_Name[0]);
 	}
 
 	bool is_dir_record_used() const {
@@ -194,11 +194,11 @@ struct FATxx_dir_entry_t
 		return combine(DIR_WrtDate, DIR_WrtTime);
 	}
 
-	static constexpr char nonValidChars[] = R"("*+,./:;<=>?[\]|)";
-	static int ValidChar(char mychar)
+	static constexpr char non_valid_chars[] = R"("*+,./:;<=>?[\]|)";
+	static int is_valid_char(char mychar)
 	{
 		return !((mychar >= '\x00') && (mychar <= '\x20')) &&
-			strchr(nonValidChars, mychar) == nullptr;
+			strchr(non_valid_chars, mychar) == nullptr;
 	}
 };
 
@@ -208,18 +208,18 @@ uint32_t FATxx_dir_entry_t::dir_entry_name_to_str(T& name) {
 	uint32_t invalid = 0;
 
 	for (int i = 0; i < 8; ++i) {
-		if (!ValidChar(DIR_Name[i])) {
+		if (!is_valid_char(DIR_Name[i])) {
 			if (DIR_Name[i] != ' ') ++invalid;
 			break;
 		}
 		name.push_back(DIR_Name[i]);
 	}
-	if (ValidChar(DIR_Name[8]))
+	if (is_valid_char(DIR_Name[8]))
 	{
 		name.push_back('.');
 	}
 	for (int i = 8; i < 8 + 3; ++i) {
-		if (!ValidChar(DIR_Name[i])) {
+		if (!is_valid_char(DIR_Name[i])) {
 			if (DIR_Name[i] != ' ') ++invalid;
 			break;
 		}
@@ -232,6 +232,85 @@ uint32_t FATxx_dir_entry_t::dir_entry_name_to_str(T& name) {
 static_assert(offsetof(FATxx_dir_entry_t, DIR_Attr) == 11, "Wrong FAT_attrib_t offset");
 static_assert(sizeof(FATxx_dir_entry_t) == 32, "Wrong size of FATxx_dir_entry_t"); //-V112
 
+#pragma pack(push, 1)
+struct VFAT_LFN_dir_entry_t
+{
+	uint8_t  LFN_index;			 // 0x00; Index of LFN record. Bit 6 set in last LFN item, bits 4-0 -- LFN number
+	uint16_t LFN_name_part1[5];  // 0x01; First 5 UCS-2 symbols
+	FAT_attrib_t  DIR_Attr;		 // 0x0B; Should be 0x0F
+	uint8_t	 LFN_type;			 // 0x0C; Should be 0. WinNT uses bits 3 (lowercase name) & 4 (lowercase ext).
+								 //		  For names of type "nnnnnnnn.ext", "nnnnnnnn.EXT", "NNNNNNNN.ext",
+								 //		  WinNT does not create VFAT entry, but sets bits 4 and 3: '11', '10', '01' respectively
+	uint8_t  LFN_DOS_name_CRC;	 // 0x0D; Checksum of the DOS short dir record this LFN belongs to. See LFN_checksum().
+	uint16_t LFN_name_part2[6];  // 0x0E; Second 6 UCS-2 symbols
+	uint16_t LFN_FstClsZero;	 // 0x1A; First cluster of record, should be 0.
+	uint16_t LFN_name_part3[2];	 // 0x1C; Third, 2 UCS-2 symbols
+
+	static constexpr size_t LFN_name_part1_size = sizeof(LFN_name_part1) / sizeof(LFN_name_part1[0]);
+	static constexpr size_t LFN_name_part2_size = sizeof(LFN_name_part2) / sizeof(LFN_name_part2[0]);
+	static constexpr size_t LFN_name_part3_size = sizeof(LFN_name_part3) / sizeof(LFN_name_part3[0]);
+
+	static uint8_t LFN_checksum(const char* DIR_Name)
+	{
+		unsigned char sum = 0;
+		for (int i = 11; i != 0; --i)
+			sum = ((sum & 1) << 7) + (sum >> 1) + *DIR_Name++;
+		return sum;
+	}
+
+	bool is_LFN_record_valid() const {
+		return DIR_Attr.is_longname_part() && LFN_FstClsZero == 0;
+	}
+
+	bool is_first_LFN() const {
+		return LFN_index & (1 << 6);
+	}
+
+	uint8_t get_LFN_index() const {
+		return LFN_index & (1 << 6);
+	}
+
+	static constexpr char non_valid_chars_LFN[] = R"("*/:<>?\|)";
+	static int is_valid_char_LFN(char mychar)
+	{
+		return !((mychar >= '\x00') && (mychar < '\x20')) && // Space allowed 
+			strchr(non_valid_chars_LFN, mychar) == nullptr;
+	}
+
+	//! TODO: Add Unicode support
+	//! TODO: no space character at the start or end, and no period at the end.
+	template<typename T>
+	uint32_t dir_LFN_entry_to_ASCII_str(T& name) {
+#define UNCOPYMACRO(LFN_name_part, LFN_name_part_size) \
+		for (int i = 0; i < LFN_name_part_size; ++i) { \
+			if (LFN_name_part[i] == 0) { \
+				return 0; \
+			} \
+			if (LFN_name_part[i] == 0xFFFF) { \
+				return 1; \
+			} \
+			char tc = static_cast<char>(LFN_name_part[i]); \
+			if (!is_valid_char_LFN(tc)) { \
+				return 1; \
+			} \
+			name.push_back(tc); \
+		} 
+		UNCOPYMACRO(LFN_name_part1, LFN_name_part1_size);
+		UNCOPYMACRO(LFN_name_part2, LFN_name_part2_size);
+		UNCOPYMACRO(LFN_name_part3, LFN_name_part3_size);
+
+	}
+
+#undef UNCOPYMACRO
+};
+#pragma pack(pop)
+
+inline VFAT_LFN_dir_entry_t* as_LFN_record(FATxx_dir_entry_t* dir_entry) {
+	return reinterpret_cast<VFAT_LFN_dir_entry_t*>(dir_entry); // In theory -- UB, but in practice -- should work.
+}
+static_assert(sizeof(VFAT_LFN_dir_entry_t) == 32, "Wrong size of VFAT_LFN_dir_entry_t"); //-V112
+
+// See also: https://en.wikipedia.org/wiki/Filename#Comparison_of_filename_limitations
 
 #endif 
 
