@@ -25,6 +25,7 @@ Code can be compiled using the Visual Studio project or CMakeLists.txt (tested u
 Problems
 ========
 * Read-only
-* Only FAT12
+* Only FAT12 and FAT16
 * No support for long filenames
+* No support for Unicode, ASCII only
 * Directories data, time, and some attributes are not set properly

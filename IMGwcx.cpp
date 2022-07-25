@@ -70,6 +70,8 @@ struct arc_dir_entry_t
 
 struct archive_t
 {
+	enum FAT_types { unknow_type, FAT12_type, FAT16_type, FAT32_type, exFAT_type };
+
 	static constexpr size_t sector_size = 512;
 	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
 	using on_bad_BPB_callback_t = int(*)(void*, int openmode);
@@ -77,10 +79,13 @@ struct archive_t
 	int openmode_m = PK_OM_LIST;
 	file_handle_t hArchFile = file_handle_t();    //opened file handle
 
+	FAT_types FAT_type = unknow_type;
+
 	std::vector<uint8_t> fattable;
 	std::vector<arc_dir_entry_t> arc_dir_entries;
 	tFAT12BootSec bootsec{};
 
+	size_t FAT1area_off_m = 0; //number of uint8_t before first FAT area 
 	size_t rootarea_off_m = 0; //number of uint8_t before root area 
 	size_t dataarea_off_m = 0; //number of uint8_t before data area
 	uint32_t cluster_size_m = 0;
@@ -115,6 +120,7 @@ struct archive_t
 	}
 
 	uint32_t get_root_dir_entry_count() const {
+		// MS-DOS supports 240 max for FDD and 512 for HDD
 		return bootsec.BPB_RootEntCnt;
 	}
 
@@ -122,6 +128,9 @@ struct archive_t
 		return get_data_area_offset() - get_root_area_offset(); //-V110
 	}
 
+	size_t get_FAT1_area_offset() const {
+		return FAT1area_off_m;
+	}
 	size_t get_root_area_offset() const {
 		return rootarea_off_m;
 	}
@@ -134,16 +143,32 @@ struct archive_t
 		return cluster_size_m;
 	}
 
+	uint64_t get_total_sectors_in_volume() const;
+	uint64_t get_data_sectors_in_volume() const;
+	uint64_t get_data_clusters_in_volume() const;
+
 	int process_bootsector();
 
 	int load_FAT();
+
+	FAT_types detect_FAT_type() const;
 
 	int extract_to_file(file_handle_t hUnpFile, uint32_t idx);
 
 	// root passed by copy to avoid problems while relocating vector
 	int load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root, uint32_t firstclus, uint32_t depth); //-V813
 
-	uint32_t next_cluster_FAT12(uint32_t firstclus);
+	uint32_t get_first_cluster(const FATxx_dir_entry_t& dir_entry) const;
+
+	uint32_t next_cluster_FAT12(uint32_t firstclus) const;
+	uint32_t next_cluster_FAT16(uint32_t firstclus) const;
+	uint32_t next_cluster_FAT32(uint32_t firstclus) const;
+	uint32_t next_cluster_FAT(uint32_t firstclus) const;
+
+	uint32_t max_cluster_FAT() const;
+	uint32_t max_normal_cluster_FAT() const;
+	uint32_t min_end_of_chain_FAT() const;
+	bool is_end_of_chain_FAT(uint32_t) const;
 };
 
 //------- archive_t implementation -----------------------------
@@ -155,6 +180,7 @@ int archive_t::process_bootsector() {
 	}
 
 	if (bootsec.BPB_bytesPerSec != sector_size) {
+		// TODO: Some formats, like DMF, use other sizes
 		return E_UNKNOWN_FORMAT;
 	}
 
@@ -165,14 +191,33 @@ int archive_t::process_bootsector() {
 		}
 	}
 
-	if ((get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 12)) // FAT12 Only
-	{
-		return E_UNKNOWN_FORMAT;
-	}
 	cluster_size_m = sector_size * bootsec.BPB_SecPerClus;
+	FAT1area_off_m = sector_size * bootsec.BPB_RsvdSecCnt;
 	rootarea_off_m = sector_size * (bootsec.BPB_RsvdSecCnt +
 		get_sectors_per_FAT() * static_cast<size_t>(bootsec.BPB_NumFATs));
 	dataarea_off_m = get_root_area_offset() + get_root_dir_entry_count() * sizeof(FATxx_dir_entry_t);
+
+	FAT_type = detect_FAT_type();
+	if (FAT_type == unknow_type)
+	{
+		return E_UNKNOWN_FORMAT;
+	}
+	if (FAT_type == FAT12_type && 
+		( (get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 12) ) ) // FAT12 Only
+	{
+		return E_UNKNOWN_FORMAT;
+	}
+
+	if (FAT_type == FAT16_type &&
+		((get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 256))) // FAT12 Only
+	{
+		return E_UNKNOWN_FORMAT;
+	}
+
+	if (FAT_type == FAT32_type) {
+		return E_UNKNOWN_FORMAT;
+	}
+
 	return 0;
 }
 
@@ -186,12 +231,76 @@ int archive_t::load_FAT() {
 		return E_NO_MEMORY;
 	}
 	// Read FAT table
+	set_file_pointer(hArchFile, get_FAT1_area_offset());
 	auto result = read_file(hArchFile, fattable.data(), fat_size_bytes);
 	if (result != fat_size_bytes)
 	{
 		return E_EREAD;
 	}
 	return 0;
+}
+
+uint64_t archive_t::get_total_sectors_in_volume() const {
+	uint64_t sectors = 0;
+	if (bootsec.BPB_TotSec16 != 0) {
+		sectors = bootsec.BPB_TotSec16;
+		if (bootsec.BPB_TotSec32 != 0 && bootsec.BPB_TotSec16 != bootsec.BPB_TotSec32) {
+			// TODO: inconsistent 
+		}
+	}
+	else if (bootsec.BPB_TotSec32 != 0) {
+		sectors = bootsec.BPB_TotSec32;
+	}
+	else if (bootsec.BS_BootSig == 0x29) {
+		// Temporary hack, no FAT32 EBPB definitions yet
+		const uint8_t* BS_TotSec64 = &(bootsec.BS_jmpBoot[0]) + 0x052; //-V594
+		sectors = *(reinterpret_cast<const uint64_t*>(BS_TotSec64));
+	}
+	return sectors;
+}
+
+uint64_t archive_t::get_data_sectors_in_volume() const {
+	return get_total_sectors_in_volume() - get_data_area_offset() / bootsec.BPB_bytesPerSec;
+}
+
+uint64_t archive_t::get_data_clusters_in_volume() const {
+	return get_data_sectors_in_volume() / bootsec.BPB_SecPerClus;
+}
+
+archive_t::FAT_types archive_t::detect_FAT_type() const {
+// See http://jdebp.info/FGA/determining-fat-widths.html
+	auto clusters = get_data_clusters_in_volume();
+	if (strncmp(bootsec.BS_FilSysType, "FAT12   ", 8) == 0) {
+		if (clusters > 0x0FF6) {
+			// TODO: inconsistent 
+			return archive_t::unknow_type;
+		}
+		return archive_t::FAT12_type;
+	}
+	if (strncmp(bootsec.BS_FilSysType, "FAT16   ", 8) == 0) {
+		if (clusters > 0x0FFF6) {
+			// TODO: inconsistent
+			return archive_t::unknow_type;
+		}
+		return archive_t::FAT16_type;
+	}
+	if (strncmp(bootsec.BS_FilSysType, "FAT32   ", 8) == 0) {
+		return archive_t::FAT32_type;
+	}
+
+	if (clusters >= 0x00000002 && clusters <= 0x00000FF6) { // 2–4086
+		return archive_t::FAT12_type;
+	} 
+
+	//! TODO: Possible small FAT32 discs without BS_FilSysType could be misdetected.
+	if (clusters >= 0x00000FF7 && clusters <= 0x0000FFF6) { // 4087–65526
+		return archive_t::FAT16_type;
+	}
+
+	if (clusters >= 0x0000FFF7 && clusters <= 0x0FFFFFF6) { // 65527–268435446
+		return archive_t::FAT32_type;
+	}
+	return archive_t::unknow_type; // Unknown format
 }
 
 int archive_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
@@ -202,7 +311,7 @@ int archive_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 		std::vector<char> buff(get_cluster_size());
 		while (remaining > 0)
 		{
-			if ((nextclus <= 1) || (nextclus >= 0xFF0))
+			if ( (nextclus <= 1) || (nextclus >= min_end_of_chain_FAT()) )
 			{
 				close_file(hUnpFile);
 				return E_UNKNOWN_FORMAT;
@@ -224,7 +333,7 @@ int archive_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 			if (remaining > get_cluster_size()) { remaining -= get_cluster_size(); } //-V104 //-V101
 			else { remaining = 0; }
 
-			nextclus = next_cluster_FAT12(nextclus);
+			nextclus = next_cluster_FAT(nextclus);
 		}
 		return 0;
 	}
@@ -259,7 +368,10 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 		return E_NO_MEMORY;
 	}
 
-	if ((firstclus == 1) || (firstclus >= 0xFF0)) {
+	if (firstclus >= max_normal_cluster_FAT()) {
+		// TODO: Anomaly
+	}
+	if ( (firstclus == 1) || (firstclus >= max_cluster_FAT()) ) {
 		return E_UNKNOWN_FORMAT;
 	}
 	size_t result = read_file(hArchFile, sector.get(), portion_size);
@@ -290,10 +402,10 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 			auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
 			newentryref.FileTime = sector[entry_in_cluster].get_file_datetime();
 			newentryref.FileSize = sector[entry_in_cluster].DIR_FileSize;
-			newentryref.FirstClus = sector[entry_in_cluster].get_first_cluster_FAT12();
+			newentryref.FirstClus = get_first_cluster(sector[entry_in_cluster]);
 
 			if (sector[entry_in_cluster].is_dir_record_dir() &&
-				(newentryref.FirstClus < 0xFF0) && (newentryref.FirstClus > 0x1)
+				(newentryref.FirstClus < max_cluster_FAT()) && (newentryref.FirstClus > 0x1)
 				&& (depth <= 100))
 			{
 				load_file_list_recursively(newentryref.PathName, newentryref.FirstClus, depth + 1);
@@ -306,8 +418,8 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 			break; // We already processed FAT12/16 root dir
 		}
 		else {
-			firstclus = next_cluster_FAT12(firstclus);
-			if ((firstclus <= 1) || (firstclus >= 0xFF0)) { return 0; }
+			firstclus = next_cluster_FAT(firstclus);
+			if ((firstclus <= 1) || (firstclus >= max_cluster_FAT())) { return 0; }
 			set_file_pointer(hArchFile, cluster_to_file_off(firstclus)); //-V104
 		}
 		result = read_file(hArchFile, sector.get(), portion_size);
@@ -322,7 +434,23 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 	return 0;
 }
 
-uint32_t archive_t::next_cluster_FAT12(uint32_t firstclus)
+uint32_t archive_t::get_first_cluster(const FATxx_dir_entry_t& dir_entry) const {
+	switch (FAT_type) {
+	case FAT12_type:
+		return dir_entry.get_first_cluster_FAT12();
+		break;
+	case FAT16_type:
+		return dir_entry.get_first_cluster_FAT16();
+		break;
+	case FAT32_type:
+		return dir_entry.get_first_cluster_FAT32();
+		break;
+	default:
+		return 0;
+	}
+}
+
+uint32_t archive_t::next_cluster_FAT12(uint32_t firstclus) const
 {
 	const auto FAT_byte_pre = fattable.data() + ((firstclus * 3) >> 1); // firstclus + firstclus/2 //-V104
 	//! Extract word, containing next cluster:
@@ -331,6 +459,100 @@ uint32_t archive_t::next_cluster_FAT12(uint32_t firstclus)
 	return ((*word_ptr) >> ((firstclus % 2) ? 4 : 0)) & 0x0FFF; //-V112
 }
 
+uint32_t archive_t::next_cluster_FAT16(uint32_t firstclus) const
+{
+	const auto FAT_byte_pre = fattable.data() + static_cast<size_t>(firstclus) * 2; 
+	const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
+	return *word_ptr;
+}
+
+uint32_t archive_t::next_cluster_FAT32(uint32_t firstclus) const
+{
+	// TODO: Do not forget to zero upper 4 bits!
+	assert(false && "Not implemented FAT32");
+	return 0;
+}
+
+uint32_t archive_t::next_cluster_FAT(uint32_t firstclus) const
+{
+	// TODO: Replace by function pointer
+	switch (FAT_type) {
+	case FAT12_type:
+		return next_cluster_FAT12(firstclus);
+		break;
+	case FAT16_type:
+		return next_cluster_FAT16(firstclus);
+		break;
+	case FAT32_type:
+		return next_cluster_FAT32(firstclus);
+		break;
+	default:
+		return 0;
+	}	
+}
+
+//! Note: Normal values are: 0xFF0-1, 0xFFF0-1, 0x?FFFFFF0-1. They should be used
+//! by disk software, but if values 0x0..FF0-0x0..FF6 occurs, they should be 
+//! treated as a normal value. 
+//! DOS 3.3+ treats 0xFF0 for FAT12 (but not FAT16 and FAT32) as a end-of-chain.
+//! See also max_normal_cluster_FAT().
+uint32_t archive_t::max_cluster_FAT() const
+{
+	// TODO: Replace by array
+	switch (FAT_type) {
+	case FAT12_type:
+		return 0xFF6;
+		break;
+	case FAT16_type:
+		return 0xFF'F6;
+		break;
+	case FAT32_type:
+		return 0xF'FF'FF'F6;
+		break;
+	default:
+		return 0;
+	}
+}
+
+uint32_t archive_t::max_normal_cluster_FAT() const
+{
+	// TODO: Replace by array
+	switch (FAT_type) {
+	case FAT12_type:
+		return 0xFF0-1;
+		break;
+	case FAT16_type:
+		return 0xFF'F0-1;
+		break;
+	case FAT32_type:
+		return 0xF'FF'FF'F0-1;
+		break;
+	default:
+		return 0;
+	}
+}
+
+uint32_t archive_t::min_end_of_chain_FAT() const
+{
+	switch (FAT_type) {
+	case FAT12_type:
+		return 0xFF8;
+		break;
+	case FAT16_type:
+		return 0xFF'F8;
+		break;
+	case FAT32_type:
+		return 0xF'FF'FF'F8;
+		break;
+	default:
+		return 0;
+	}
+}
+
+bool archive_t::is_end_of_chain_FAT(uint32_t cluster) const 
+{
+	return cluster >= min_end_of_chain_FAT();
+}
 
 using archive_HANDLE = archive_t*;
 
