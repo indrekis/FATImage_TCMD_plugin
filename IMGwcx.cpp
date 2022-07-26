@@ -75,7 +75,7 @@ struct plugin_config_t {
 
 struct archive_t
 {
-	enum FAT_types { unknow_type, FAT12_type, FAT16_type, FAT32_type, exFAT_type };
+	enum FAT_types { unknow_type, FAT12_type, FAT16_type, FAT32_type, exFAT_type, FAT_DOS100_type, FAT_DOS110_type};
 
 	static constexpr size_t sector_size = 512;
 	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
@@ -205,23 +205,27 @@ int archive_t::process_bootsector() {
 	dataarea_off_m = get_root_area_offset() + get_root_dir_entry_count() * sizeof(FATxx_dir_entry_t);
 
 	FAT_type = detect_FAT_type();
-	if (FAT_type == unknow_type)
-	{
+	switch (FAT_type) {
+	case FAT12_type:
+		if ((get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 12)) {
+			return E_UNKNOWN_FORMAT;
+		}
+		break;
+	case FAT16_type:
+		if ((get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 256)) { // get_sectors_per_FAT() < 16 according to standard
+			return E_UNKNOWN_FORMAT;		
+		}
+		break;
+	case FAT32_type:
+		if ((get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 2'097'152)) { // get_sectors_per_FAT() < 512 according to standard
+			return E_UNKNOWN_FORMAT;
+		}
+		return E_UNKNOWN_FORMAT; // Not yet implemented;
+		break;
+	case unknow_type:
 		return E_UNKNOWN_FORMAT;
-	}
-	if (FAT_type == FAT12_type && 
-		( (get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 12) ) ) // FAT12 Only
-	{
-		return E_UNKNOWN_FORMAT;
-	}
-
-	if (FAT_type == FAT16_type &&
-		((get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 256))) // FAT12 Only
-	{
-		return E_UNKNOWN_FORMAT;
-	}
-
-	if (FAT_type == FAT32_type) {
+	default:
+		//! Here also unsupported (yet) formats like exFAT
 		return E_UNKNOWN_FORMAT;
 	}
 
@@ -276,6 +280,10 @@ uint64_t archive_t::get_data_clusters_in_volume() const {
 
 archive_t::FAT_types archive_t::detect_FAT_type() const {
 // See http://jdebp.info/FGA/determining-fat-widths.html
+	auto sectors = bootsec.BPB_bytesPerSec;
+	if(sectors == 0){
+		return archive_t::exFAT_type;
+	}
 	auto clusters = get_data_clusters_in_volume();
 	if (strncmp(bootsec.BS_FilSysType, "FAT12   ", 8) == 0) {
 		if (clusters > 0x0FF6) {
@@ -542,9 +550,9 @@ uint32_t archive_t::next_cluster_FAT16(uint32_t firstclus) const
 
 uint32_t archive_t::next_cluster_FAT32(uint32_t firstclus) const
 {
-	// TODO: Do not forget to zero upper 4 bits!
-	assert(false && "Not implemented FAT32");
-	return 0;
+	const auto FAT_byte_pre = fattable.data() + static_cast<size_t>(firstclus) * 4;
+	const uint32_t* word_ptr = reinterpret_cast<const uint32_t*>(FAT_byte_pre);
+	return (*word_ptr) & 0x0F'FF'FF'FF; // Zero upper 4 bits
 }
 
 uint32_t archive_t::next_cluster_FAT(uint32_t firstclus) const
