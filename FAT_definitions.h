@@ -14,6 +14,68 @@
 // BPB = BIOS Parameter Block
 // BS = (Extended) Boot Record. Extended BR is also called EBPB 
 #pragma pack(push, 1) // See also __attribute__((packed)) 
+
+// DOS 3.00, 3.20 use slightly incompatible BPB here, future systems use DOS 3.31 BPB
+//! See also http://jdebp.info/FGA/bios-parameter-block.html
+struct tFAT_BPB_DOS3x0 {
+// For reference:
+// BPB 3.00
+	uint16_t BPB_HiddSec;		// 0x01C; 2 bytes. Sectors on disk before this partition. 0 for non-partitioned disks. 
+								// Do not use if 0x013 == 0.
+// BPB 3.20
+	uint16_t BPB_TotHiddSec;	// 0x01E; Total logical sectors including hidden sectors. Do not use if 0x013 == 0.
+	uint8_t  padding[30];
+};
+
+// Extended Boot Record or Extended BIOS Parameter Block (EBPB) for FAT12/16; DOS 4.00+; OS/2 1.00+
+// (+ part of BPB, incompartible with DOS 3.20-)
+struct tFAT_EBPB_FAT {
+	uint32_t BPB_HiddSec;       // 0x01C; 4 bytes. Sectors on disk before this partition -- the LBA of the beginning of the partition. 
+								//		  0 for non-partitioned disks. Do not use if 0x013 == 0. 
+	uint32_t BPB_TotSec32;		// 0x020; if more than 65535, then  0x013 == 0
+	//----------------------------------------
+	uint8_t  BS_DrvNum;			// 0x024; 0x00-0x7E for removable, 0x80-0xFE -- fixed disks. 0x7F and 0xFF for boot ROMs and so on. 
+								//		  For DOS 3.2 to 3.31 -- similar entry at 0x1FD.
+	uint8_t  BS_ReservedOrNT;	// 0x025; For NT: bit 1: physical error, bit 0: was not properly unmounted, check it on next boot.
+	uint8_t  BS_BootSig;		// 0x026; Extended boot signature. 0x29 -- contains all 3 next fields, (DOS 4.0, OS/2 1.2);
+								//		  0x28 -- only BS_VolID
+	uint32_t BS_VolID;			// 0x027; Volume serial number
+	uint8_t  BS_VolLab[11];		// 0x02B; Partition volume label, should be padded by spaces. Should be equal to vol. label, but frequently is not
+	char     BS_FilSysType[8];  // 0x036; FS Type, "FAT     ", "FAT12   ", "FAT16   ", "FAT32   ",
+								//		  "The spec says never to trust the contents of this string for any use", but see: http://jdebp.info/FGA/determining-fat-widths.html
+}; //34
+
+// (+ part of BPB, incompartible with DOS 3.20-)
+struct tFAT_EBPB_FAT32 {
+	uint32_t BPB_HiddSec;       // 0x01C; 4 bytes. Sectors on disk before this partition -- the LBA of the beginning of the partition. 
+								//		  0 for non-partitioned disks. Do not use if 0x013 == 0. 
+	uint32_t BPB_TotSec32;		// 0x020; if more than 65535, then  0x013 == 0
+	//----------------------------------------
+	uint32_t BS_SectorsPerFAT32;// 0x024; The byte at offset 0x026 should never == 0x29 or 0x28, to avoid a misindentification with BS_BootSig
+								//		   Then BPB_SectorsPerFAT (0x016) should be zero.
+	uint16_t BS_ExtFlags;		// 0x028; If bit 7 set; bits 3-0 select active FAT; If not -- FATs are mirrored as usual.
+								//			Ignore other bits -- for MS products they are 0, but DR-DOS may use them.
+	uint8_t	 BS_FSVer_minor;	// 0x02A; Should be 0.0.
+	uint8_t	 BS_FSVer_major;	// 0x02B;
+	uint32_t BS_RootFirstClus;  // 0x02C; First cluster of root dir. Never should be 0. Nonstandard implementation may use 0 to 
+								//		  show that fixed old-style root dir used.
+	uint16_t BS_FSInfoSec;		// 0x030; Logical sector number of FS Information Sector, placed in reserved area, typically 1.
+								//		  Nonstandard implementations may use 0x0000 or 0xFFFF to show absent Info. Sec. 
+								//		  Absent Info. Sec. allow use sector size 128.
+	uint16_t BS_KbpBootSec;		// 0x032; First (logical) sector of boot sectors copy. Mostly should be equal to 6.
+								//		  0x0000 or 0xFFFF  -- no backup
+	uint8_t  BS_Reserved[12];	// 0x034; 
+	//--------------------------// Same as last part of FAT12/16 BPB.
+	uint8_t  BS_DrvNum;			// 0x040; Same as 0x024 in tFAT_EBPB_FAT.
+	uint8_t  BS_ReservedOrNT;	// 0x041; Same as 0x025 in tFAT_EBPB_FAT. bit 1: physical error, bit 0: was not properly unmounted, check it on next boot.
+	uint8_t  BS_BootSig;		// 0x042; Same as 0x026 in tFAT_EBPB_FAT. Most 0x29, but could be 0x28, then only BS_VolID is present
+	uint32_t BS_VolID;			// 0x043; Same as 0x027 in tFAT_EBPB_FAT. 
+	uint8_t  BS_VolLab[11];		// 0x047; Same as 0x02B in tFAT_EBPB_FAT. 
+	char     BS_FilSysType[8];  // 0x052; Same as 0x036 in tFAT_EBPB_FAT. 
+								//		   Some implementations can use it as a 64-bit total logical sectors count if 0x020 and 0x013 are 0
+
+};
+
 struct tFAT12BootSec
 {
 	//--------------------------// Common part for the DOS 2.0+
@@ -56,10 +118,25 @@ struct tFAT12BootSec
 	uint8_t  remaining_part[448];
 	uint16_t signature;         // 0x1FE; 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
 };
-#pragma pack(pop)
-
-static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
 static_assert(std::endian::native == std::endian::little, "Wrong endiannes");
+static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
+
+//! Valid only if bits at 0x041 show clear shutdown.
+//! All data in this sector are unreliable, should be used only as a optimization hint.
+struct FAT32_FS_InfoSec {
+	uint8_t  signature1[4];		// 0x000; Should be {0x52, 0x52, 0x61, 0x41} --  "RRaA". Sector is often situatet at the typical 
+								//		  start of the FAT12/FAT16 FAT, so FAT32 partition would not be misidentified.
+								//		  0x41615252  if read to uint32_t (on LE).
+	uint8_t  reserved1[480];	// 0x004; Reserved
+	uint8_t  signature2[4];		// 0x1E4; {0x72, 0x72, 0x41, 0x61} -- "rrAa" (0x61417272 if read to uint32_t on LE)
+	uint32_t freeClus;			// 0x1E8; Last known number of free data clusters, 0xFFFFFFFF if unknown. 
+	uint32_t busyClus;			// 0x1EC; Last known allocated clusters, 0xFFFFFFFF if unknown. OS should start searching for free clusters here
+	uint8_t  reserved2[12];		// 0x1F0; Reserved
+	uint8_t  signature3[4];		// 0x1FC; {0x00, 0x00, 0x55, 0xAA}, 0xAA550000 if read to uint32_t on LE.
+};
+static_assert(sizeof(FAT32_FS_InfoSec) == 512, "Wrong boot sector structure size");
+
+#pragma pack(pop)
 
 #pragma pack(push, 1)
 struct FAT_attrib_t {

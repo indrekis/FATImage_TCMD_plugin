@@ -220,6 +220,11 @@ int archive_t::process_bootsector() {
 		if ((get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 2'097'152)) { // get_sectors_per_FAT() < 512 according to standard
 			return E_UNKNOWN_FORMAT;
 		}
+		// TODO: Modify without type punning
+		if (bootsec.BS_BootSig == 0x29 || bootsec.BS_BootSig == 0x28) {
+			return E_UNKNOWN_FORMAT;
+		}
+
 		return E_UNKNOWN_FORMAT; // Not yet implemented;
 		break;
 	case unknow_type:
