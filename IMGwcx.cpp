@@ -220,8 +220,8 @@ int archive_t::process_bootsector() {
 		if ((get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 2'097'152)) { // get_sectors_per_FAT() < 512 according to standard
 			return E_UNKNOWN_FORMAT;
 		}
-		// TODO: Modify without type punning
-		if (bootsec.BS_BootSig == 0x29 || bootsec.BS_BootSig == 0x28) {
+		// There should not be those velues in correct FAT32
+		if (bootsec.EBPB_FAT.BS_BootSig == 0x29 || bootsec.EBPB_FAT.BS_BootSig == 0x28) {
 			return E_UNKNOWN_FORMAT;
 		}
 
@@ -260,14 +260,14 @@ uint64_t archive_t::get_total_sectors_in_volume() const {
 	uint64_t sectors = 0;
 	if (bootsec.BPB_TotSec16 != 0) {
 		sectors = bootsec.BPB_TotSec16;
-		if (bootsec.BPB_TotSec32 != 0 && bootsec.BPB_TotSec16 != bootsec.BPB_TotSec32) {
+		if (bootsec.EBPB_FAT.BPB_TotSec32 != 0 && bootsec.BPB_TotSec16 != bootsec.EBPB_FAT.BPB_TotSec32) {
 			// TODO: inconsistent 
 		}
 	}
-	else if (bootsec.BPB_TotSec32 != 0) {
-		sectors = bootsec.BPB_TotSec32;
+	else if (bootsec.EBPB_FAT.BPB_TotSec32 != 0) {
+		sectors = bootsec.EBPB_FAT.BPB_TotSec32;
 	}
-	else if (bootsec.BS_BootSig == 0x29) {
+	else if (bootsec.EBPB_FAT.BS_BootSig == 0x29) {
 		// Temporary hack, no FAT32 EBPB definitions yet
 		const uint8_t* BS_TotSec64 = &(bootsec.BS_jmpBoot[0]) + 0x052; //-V594
 		sectors = *(reinterpret_cast<const uint64_t*>(BS_TotSec64));
@@ -290,21 +290,23 @@ archive_t::FAT_types archive_t::detect_FAT_type() const {
 		return archive_t::exFAT_type;
 	}
 	auto clusters = get_data_clusters_in_volume();
-	if (strncmp(bootsec.BS_FilSysType, "FAT12   ", 8) == 0) {
+	if (strncmp(bootsec.EBPB_FAT.BS_FilSysType, "FAT12   ", 8) == 0) {
 		if (clusters > 0x0FF6) {
 			// TODO: inconsistent 
 			return archive_t::unknow_type;
 		}
 		return archive_t::FAT12_type;
 	}
-	if (strncmp(bootsec.BS_FilSysType, "FAT16   ", 8) == 0) {
+	if (strncmp(bootsec.EBPB_FAT.BS_FilSysType, "FAT16   ", 8) == 0) {
 		if (clusters > 0x0FFF6) {
 			// TODO: inconsistent
 			return archive_t::unknow_type;
 		}
 		return archive_t::FAT16_type;
 	}
-	if (strncmp(bootsec.BS_FilSysType, "FAT32   ", 8) == 0) {
+	if (strncmp(bootsec.EBPB_FAT.BS_FilSysType, "FAT32   ", 8) == 0 || // Could contain it
+		strncmp(bootsec.EBPB_FAT32.BS_FilSysType, "FAT32   ", 8) == 0
+		) {
 		return archive_t::FAT32_type;
 	}
 

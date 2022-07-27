@@ -24,7 +24,7 @@ struct tFAT_BPB_DOS3x0 {
 								// Do not use if 0x013 == 0.
 // BPB 3.20
 	uint16_t BPB_TotHiddSec;	// 0x01E; Total logical sectors including hidden sectors. Do not use if 0x013 == 0.
-	uint8_t  padding[30];
+	uint8_t  padding[58];
 };
 
 // Extended Boot Record or Extended BIOS Parameter Block (EBPB) for FAT12/16; DOS 4.00+; OS/2 1.00+
@@ -43,7 +43,8 @@ struct tFAT_EBPB_FAT {
 	uint8_t  BS_VolLab[11];		// 0x02B; Partition volume label, should be padded by spaces. Should be equal to vol. label, but frequently is not
 	char     BS_FilSysType[8];  // 0x036; FS Type, "FAT     ", "FAT12   ", "FAT16   ", "FAT32   ",
 								//		  "The spec says never to trust the contents of this string for any use", but see: http://jdebp.info/FGA/determining-fat-widths.html
-}; //34
+	uint8_t	 padding[62-34];
+}; // Sizeof 0x22 = 34 + padding, sizeof tFAT_EBPB_FAT32 == 0x3E == 62
 
 // (+ part of BPB, incompartible with DOS 3.20-)
 struct tFAT_EBPB_FAT32 {
@@ -74,7 +75,10 @@ struct tFAT_EBPB_FAT32 {
 	char     BS_FilSysType[8];  // 0x052; Same as 0x036 in tFAT_EBPB_FAT. 
 								//		   Some implementations can use it as a 64-bit total logical sectors count if 0x020 and 0x013 are 0
 
-};
+}; // 0x3E = 62
+
+static_assert(sizeof(tFAT_BPB_DOS3x0) == sizeof(tFAT_EBPB_FAT), "Wrong variadic BPB part size");
+static_assert(sizeof(tFAT_EBPB_FAT) == sizeof(tFAT_EBPB_FAT32), "Wrong variadic BPB part size");
 
 struct tFAT12BootSec
 {
@@ -91,6 +95,17 @@ struct tFAT12BootSec
 	uint8_t  BPB_MediaDescr;	// 0x015; same as 1-st byte of FAT. See https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#FATID
 	uint16_t BPB_SectorsPerFAT; // 0x016; FAT12/16, 0 for FAT32, it uses val at 0x024.
 	//--------------------------// End of common part for the DOS 2.0+.
+	//--------------------------// Relies here on correct type punning. GCC supports it: https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html#Type%2Dpunning
+								// Didn't found (yet?) in MSVC docs, but it's headers use type punning heavily. Clang -- unknown.
+	union {
+		tFAT_BPB_DOS3x0 BPB_DOS3x0;
+		tFAT_EBPB_FAT	EBPB_FAT;
+		tFAT_EBPB_FAT32 EBPB_FAT32;
+	};
+	uint8_t  remaining_part[424];
+	uint16_t signature;         // 0x1FE; 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
+
+#if 0
 	uint16_t BPB_SecPerTrk;		// 0x018; If 0 -- reserved, not used. DOS 3.00+
 	uint16_t BPB_NumHeads;		// 0x01A; DOS up to 7.10 have bug here, so 255 heads max. 0 -- reserved, not used. DOS 3.00+
 	// DOS 3.00, 3.20 use slightly incompatible BPB here, future systems use DOS 3.31 BPB
@@ -117,6 +132,7 @@ struct tFAT12BootSec
 	// Rest of bootsector
 	uint8_t  remaining_part[448];
 	uint16_t signature;         // 0x1FE; 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
+#endif 
 };
 static_assert(std::endian::native == std::endian::little, "Wrong endiannes");
 static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
@@ -375,7 +391,7 @@ struct VFAT_LFN_dir_entry_t
 		UNCOPYMACRO(LFN_name_part1, LFN_name_part1_size);
 		UNCOPYMACRO(LFN_name_part2, LFN_name_part2_size);
 		UNCOPYMACRO(LFN_name_part3, LFN_name_part3_size);
-
+		return 0;
 	}
 
 #undef UNCOPYMACRO
