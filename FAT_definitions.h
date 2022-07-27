@@ -74,7 +74,12 @@ struct tFAT_EBPB_FAT32 {
 	uint8_t  BS_VolLab[11];		// 0x047; Same as 0x02B in tFAT_EBPB_FAT. 
 	char     BS_FilSysType[8];  // 0x052; Same as 0x036 in tFAT_EBPB_FAT. 
 								//		   Some implementations can use it as a 64-bit total logical sectors count if 0x020 and 0x013 are 0
-
+	bool is_FAT_mirrored() const {
+		return !(BS_ExtFlags & 1 << 7);
+	}
+	uint32_t get_active_FAT() const {
+		return BS_ExtFlags & 0x0F;
+	}
 }; // 0x3E = 62
 
 static_assert(sizeof(tFAT_BPB_DOS3x0) == sizeof(tFAT_EBPB_FAT), "Wrong variadic BPB part size");
@@ -95,6 +100,8 @@ struct tFAT12BootSec
 	uint8_t  BPB_MediaDescr;	// 0x015; same as 1-st byte of FAT. See https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#FATID
 	uint16_t BPB_SectorsPerFAT; // 0x016; FAT12/16, 0 for FAT32, it uses val at 0x024.
 	//--------------------------// End of common part for the DOS 2.0+.
+	uint16_t BPB_SecPerTrk;		// 0x018; If 0 -- reserved, not used. DOS 3.00+
+	uint16_t BPB_NumHeads;		// 0x01A; DOS up to 7.10 have bug here, so 255 heads max. 0 -- reserved, not used. DOS 3.00+
 	//--------------------------// Relies here on correct type punning. GCC supports it: https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html#Type%2Dpunning
 								// Didn't found (yet?) in MSVC docs, but it's headers use type punning heavily. Clang -- unknown.
 	union {
@@ -102,7 +109,7 @@ struct tFAT12BootSec
 		tFAT_EBPB_FAT	EBPB_FAT;
 		tFAT_EBPB_FAT32 EBPB_FAT32;
 	};
-	uint8_t  remaining_part[424];
+	uint8_t  remaining_part[420];
 	uint16_t signature;         // 0x1FE; 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
 
 #if 0
