@@ -176,6 +176,33 @@ struct archive_t
 	uint32_t max_normal_cluster_FAT() const;
 	uint32_t min_end_of_chain_FAT() const;
 	bool is_end_of_chain_FAT(uint32_t) const;
+
+	struct LFN_accumulator_t {
+		minimal_fixed_string_t<MAX_PATH> cur_LFN_name{};
+		uint8_t cur_LFN_CRC = 0;
+		int cur_LFN_record_index = 0;
+		void start_processing(VFAT_LFN_dir_entry_t* LFN_record) {
+			cur_LFN_CRC = LFN_record->LFN_DOS_name_CRC;
+			cur_LFN_record_index = 1;
+			cur_LFN_name.clear();
+			LFN_record->dir_LFN_entry_to_ASCII_str(cur_LFN_name);
+		}
+		void append_LFN_part(VFAT_LFN_dir_entry_t* LFN_record) {
+			++cur_LFN_record_index;
+			minimal_fixed_string_t<MAX_PATH> next_LFN_part;
+			LFN_record->dir_LFN_entry_to_ASCII_str(next_LFN_part);
+			next_LFN_part.push_back(cur_LFN_name);
+			cur_LFN_name = next_LFN_part;
+		}
+		void abort_processing() {
+			cur_LFN_CRC = 0;
+			cur_LFN_record_index = 0;
+			cur_LFN_name.clear();
+		}
+		bool are_processing() {
+			return cur_LFN_record_index > 0;
+		}
+	};
 };
 
 //------- archive_t implementation -----------------------------
@@ -401,10 +428,7 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 		return E_EREAD;
 	}
 
-	bool is_processing_LFN_chain = false;
-	minimal_fixed_string_t<MAX_PATH> cur_LFN_name{};
-	uint8_t cur_LFN_CRC = 0;
-	int cur_LFN_record_index = 0;
+	LFN_accumulator_t current_LFN;
 	do {
 		size_t entry_in_cluster = 0;
 		while ((entry_in_cluster < records_number) && (!sector[entry_in_cluster].is_dir_record_free()))
@@ -412,41 +436,24 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 			if (sector[entry_in_cluster].is_dir_record_longname_part()) {
 				if (plugin_config.use_VFAT) {
 					auto LFN_record = as_LFN_record(&sector[entry_in_cluster]);
-					if (!is_processing_LFN_chain) {
+					if (!current_LFN.are_processing()) {
 						if (!LFN_record->is_LFN_record_valid() || !LFN_record->is_first_LFN()) {
 							entry_in_cluster++;
 							continue;
 						}
-						is_processing_LFN_chain = true;
-						cur_LFN_CRC = LFN_record->LFN_DOS_name_CRC;
-						cur_LFN_record_index = 1;
-						cur_LFN_name.clear();
-						LFN_record->dir_LFN_entry_to_ASCII_str(cur_LFN_name);
+						current_LFN.start_processing(LFN_record);
 					}
 					else {
 						if (!LFN_record->is_LFN_record_valid()) {
-							is_processing_LFN_chain = false;
-							cur_LFN_CRC = 0;
-							cur_LFN_record_index = 0;
-							cur_LFN_name.clear();
+							current_LFN.abort_processing();
 						} else if (LFN_record->is_first_LFN()) { // Should restart processing 
-							cur_LFN_CRC = LFN_record->LFN_DOS_name_CRC;
-							cur_LFN_record_index = 1;
-							cur_LFN_name.clear();
-							LFN_record->dir_LFN_entry_to_ASCII_str(cur_LFN_name);
+							current_LFN.start_processing(LFN_record);
 						}
-						else if (cur_LFN_CRC != LFN_record->LFN_DOS_name_CRC) {
-							is_processing_LFN_chain = false;
-							cur_LFN_CRC = 0;
-							cur_LFN_record_index = 0;
-							cur_LFN_name.clear();
+						else if (current_LFN.cur_LFN_CRC != LFN_record->LFN_DOS_name_CRC) {
+							current_LFN.abort_processing();
 						}
 						else {
-							++cur_LFN_record_index;
-							minimal_fixed_string_t<MAX_PATH> next_LFN_part;
-							LFN_record->dir_LFN_entry_to_ASCII_str(next_LFN_part);
-							next_LFN_part.push_back(cur_LFN_name);
-							cur_LFN_name = next_LFN_part;
+							current_LFN.append_LFN_part(LFN_record);
 						}
 					}
 				}
@@ -459,10 +466,8 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 				sector[entry_in_cluster].is_dir_record_invalid_attr()
 				)
 			{
-				is_processing_LFN_chain = false;
-				cur_LFN_CRC = 0;
-				cur_LFN_record_index = 0;
-				cur_LFN_name.clear();
+				if(current_LFN.are_processing())
+					current_LFN.abort_processing();
 				entry_in_cluster++;
 				continue;
 			}
@@ -473,17 +478,14 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 			// TODO: errors handling
 			newentryref.PathName.push_back(root); // OK for empty root
 			newentryref.PathName.push_back('\\');
-			if (plugin_config.use_VFAT && is_processing_LFN_chain) {
-				if (cur_LFN_CRC == VFAT_LFN_dir_entry_t::LFN_checksum(sector[entry_in_cluster].DIR_Name)) {
-					newentryref.PathName.push_back(cur_LFN_name);
+			if (plugin_config.use_VFAT && current_LFN.are_processing()) {
+				if (current_LFN.cur_LFN_CRC == VFAT_LFN_dir_entry_t::LFN_checksum(sector[entry_in_cluster].DIR_Name)) {
+					newentryref.PathName.push_back(current_LFN.cur_LFN_name);
 				}
 				else {
 					auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
 				}
-				is_processing_LFN_chain = false;
-				cur_LFN_CRC = 0;
-				cur_LFN_record_index = 0;
-				cur_LFN_name.clear();
+				current_LFN.abort_processing();
 			}
 			else {
 				auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
