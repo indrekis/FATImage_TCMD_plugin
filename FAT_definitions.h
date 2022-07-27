@@ -412,5 +412,7 @@ static_assert(sizeof(VFAT_LFN_dir_entry_t) == 32, "Wrong size of VFAT_LFN_dir_en
 
 // See also: https://en.wikipedia.org/wiki/Filename#Comparison_of_filename_limitations
 
+// XDF images seem to be interpreted correctly. Additionally: http://www.os2museum.com/wp/the-xdf-diskette-format/
+// 
 #endif 
 
