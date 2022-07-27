@@ -5,6 +5,8 @@ This project is intended to create a wcx (archive) plugin for 64-bit Total Comma
 There are several such good plugins for the 32-bit TCmd, but none (to the best of my knowledge) for the 64-bit TCmd. 
 IMG Plugin for Total Commander (TCmd) by IvGzury was used as a starting point because its sources were available.
 
+Supports: FAT12, FAT16, FAT32, VFAT.
+
 Original [img readme](orig_img_read.txt)
 
 Installation
@@ -25,7 +27,6 @@ Code can be compiled using the Visual Studio project or CMakeLists.txt (tested u
 Problems
 ========
 * Read-only
-* Only FAT12 and FAT16
-* No support for long filenames
+* Support for the exFAT not planned (yet) 
 * No support for Unicode, ASCII only
 * Directories data, time, and some attributes are not set properly

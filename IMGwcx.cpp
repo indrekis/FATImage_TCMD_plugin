@@ -114,12 +114,17 @@ struct archive_t
 			close_file(hArchFile);
 	}
 
-	size_t cluster_to_file_off(uint32_t cluster) {
+	size_t cluster_to_image_off(uint32_t cluster) {
 		return get_data_area_offset() + static_cast<size_t>(cluster - 2) * get_cluster_size(); //-V104
 	}
 
 	uint32_t get_sectors_per_FAT() const {
-		return bootsec.BPB_SectorsPerFAT;
+		if (bootsec.BPB_SectorsPerFAT != 0) {
+			return bootsec.BPB_SectorsPerFAT;
+		}
+		else { // Possibly -- FAT32
+			return bootsec.EBPB_FAT32.BS_SectorsPerFAT32;
+		}
 	}
 
 	uint32_t get_bytes_per_FAT() const {
@@ -251,8 +256,10 @@ int archive_t::process_bootsector() {
 		if (bootsec.EBPB_FAT.BS_BootSig == 0x29 || bootsec.EBPB_FAT.BS_BootSig == 0x28) {
 			return E_UNKNOWN_FORMAT;
 		}
-
-		return E_UNKNOWN_FORMAT; // Not yet implemented;
+		// TODO: Support other active FAT tables:
+		if (!(bootsec.EBPB_FAT32.is_FAT_mirrored() || bootsec.EBPB_FAT32.get_active_FAT() == 0)) {
+			return E_UNKNOWN_FORMAT; // Not yet implemented;
+		}		
 		break;
 	case unknow_type:
 		return E_UNKNOWN_FORMAT;
@@ -294,10 +301,10 @@ uint64_t archive_t::get_total_sectors_in_volume() const {
 	else if (bootsec.EBPB_FAT.BPB_TotSec32 != 0) {
 		sectors = bootsec.EBPB_FAT.BPB_TotSec32;
 	}
-	else if (bootsec.EBPB_FAT.BS_BootSig == 0x29) {
-		// Temporary hack, no FAT32 EBPB definitions yet
-		const uint8_t* BS_TotSec64 = &(bootsec.BS_jmpBoot[0]) + 0x052; //-V594
-		sectors = *(reinterpret_cast<const uint64_t*>(BS_TotSec64));
+	else if (bootsec.EBPB_FAT32.BS_BootSig == 0x29) {
+		// Some non-standard systems
+		const uint64_t* BS_TotSec64 = reinterpret_cast<const uint64_t*>(bootsec.EBPB_FAT32.BS_FilSysType);
+		sectors = *BS_TotSec64;
 	}
 	return sectors;
 }
@@ -365,7 +372,7 @@ int archive_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 				close_file(hUnpFile);
 				return E_UNKNOWN_FORMAT;
 			}
-			set_file_pointer(hArchFile, cluster_to_file_off(nextclus));
+			set_file_pointer(hArchFile, cluster_to_image_off(nextclus));
 			size_t towrite = std::min<size_t>(get_cluster_size(), remaining);
 			size_t result = read_file(hArchFile, buff.data(), towrite);
 			if (result != towrite)
@@ -398,6 +405,12 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 		counter = 0;
 		arc_dir_entries.clear();
 	}
+
+	if (firstclus == 0 && FAT_type == FAT32_type) {
+		// For exotic implementations, if BS_RootFirstClus == 0, will behave as expected
+		firstclus = bootsec.EBPB_FAT32.BS_RootFirstClus; 
+	}
+
 	size_t portion_size = 0;
 	if (firstclus == 0)
 	{   // Read whole FAT12/16 dir at once
@@ -405,7 +418,7 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 		portion_size = get_root_dir_size();
 	}
 	else {
-		set_file_pointer(hArchFile, cluster_to_file_off(firstclus));
+		set_file_pointer(hArchFile, cluster_to_image_off(firstclus));
 		portion_size = static_cast<size_t>(get_cluster_size());
 	}
 	size_t records_number = portion_size / sizeof(FATxx_dir_entry_t);
@@ -426,7 +439,7 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 	size_t result = read_file(hArchFile, sector.get(), portion_size);
 	if (result != portion_size) {
 		return E_EREAD;
-	}
+	} 
 
 	LFN_accumulator_t current_LFN;
 	do {
@@ -511,7 +524,7 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 		else {
 			firstclus = next_cluster_FAT(firstclus);
 			if ((firstclus <= 1) || (firstclus >= max_cluster_FAT())) { return 0; }
-			set_file_pointer(hArchFile, cluster_to_file_off(firstclus)); //-V104
+			set_file_pointer(hArchFile, cluster_to_image_off(firstclus)); //-V104
 		}
 		result = read_file(hArchFile, sector.get(), portion_size);
 		if (result != portion_size) {
