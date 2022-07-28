@@ -104,3 +104,23 @@ bool set_file_datetime(file_handle_t handle, uint32_t file_datetime)
 bool set_file_attributes(const char* filename, uint32_t attribute){
 	return SetFileAttributes(filename, attribute);
 }
+
+size_t get_file_size(const char* filename)
+{
+	WIN32_FILE_ATTRIBUTE_DATA fad;
+	if (!GetFileAttributesEx(filename, GetFileExInfoStandard, &fad))
+		return -1; 
+	LARGE_INTEGER size;
+	size.HighPart = fad.nFileSizeHigh;
+	size.LowPart = fad.nFileSizeLow;
+	return size.QuadPart;
+}
+
+size_t get_file_size(file_handle_t handle)
+{
+	LARGE_INTEGER size;
+	if (!GetFileSizeEx(handle, &size))
+		return -1;
+
+	return size.QuadPart;
+}

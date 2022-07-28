@@ -7,6 +7,9 @@ IMG Plugin for Total Commander (TCmd) by IvGzury was used as a starting point be
 
 Supports: FAT12, FAT16, FAT32, VFAT.
 
+Supports DOS 1.xx images without BPB. Support is based on the media descriptor in the FAT table and image size. Added several exceptions 
+for the popular quirks of images on the retro sites.
+
 Original [img readme](orig_img_read.txt)
 
 Installation
@@ -29,4 +32,6 @@ Problems
 * Read-only
 * Support for the exFAT not planned (yet) 
 * No support for Unicode, ASCII only
+* No support for the 8" images, including 86-DOS images
 * Directories data, time, and some attributes are not set properly
+* Does not go into the empty dirs

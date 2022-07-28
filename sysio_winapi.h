@@ -23,6 +23,8 @@ size_t read_file(file_handle_t handle, void* buffer_ptr, size_t size);
 size_t write_file(file_handle_t handle, const void* buffer_ptr, size_t size);
 bool set_file_datetime(file_handle_t handle, uint32_t file_datetime);
 bool set_file_attributes(const char* filename, uint32_t attribute);
+size_t get_file_size(const char* filename);
+size_t get_file_size(file_handle_t handle);
 
 #endif 
 
