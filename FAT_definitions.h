@@ -112,7 +112,7 @@ struct tFAT12BootSec
 	uint8_t  remaining_part[420];
 	uint16_t signature;         // 0x1FE; 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
 
-#if 0
+#if 0 // Left here as a visual reference
 	uint16_t BPB_SecPerTrk;		// 0x018; If 0 -- reserved, not used. DOS 3.00+
 	uint16_t BPB_NumHeads;		// 0x01A; DOS up to 7.10 have bug here, so 255 heads max. 0 -- reserved, not used. DOS 3.00+
 	// DOS 3.00, 3.20 use slightly incompatible BPB here, future systems use DOS 3.31 BPB
@@ -412,7 +412,10 @@ static_assert(sizeof(VFAT_LFN_dir_entry_t) == 32, "Wrong size of VFAT_LFN_dir_en
 
 // See also: https://en.wikipedia.org/wiki/Filename#Comparison_of_filename_limitations
 
-// XDF images seem to be interpreted correctly. Additionally: http://www.os2museum.com/wp/the-xdf-diskette-format/
-// 
+//! Interestin or important formats notes:
+// 1. XDF images seem to be interpreted correctly. Additionally: http://www.os2museum.com/wp/the-xdf-diskette-format/
+// 2. http://ucsd-psystem-fs.sourceforge.net/ http://ucsd-psystem-fs.sourceforge.net/ucsd-psystem-fs-1.22.pdf 
+// 3. CP/M FS formats: https://www.seasip.info/Cpm/formats.html
+// 4. 86-DOS FAT variants: https://en.wikipedia.org/wiki/86-DOS#Formats
 #endif 
 
