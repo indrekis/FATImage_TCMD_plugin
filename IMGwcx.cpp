@@ -645,8 +645,7 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 			auto& newentryref = arc_dir_entries.back();
 			newentryref.FileAttr = sector[entry_in_cluster].DIR_Attr;
 			// TODO: errors handling
-			newentryref.PathName.push_back(root); // OK for empty root
-			newentryref.PathName.push_back('\\');
+			newentryref.PathName.push_back(root); // Empty root is OK, "\\" OK too
 			if (plugin_config.use_VFAT && current_LFN.are_processing()) {
 				if (current_LFN.cur_LFN_CRC == VFAT_LFN_dir_entry_t::LFN_checksum(sector[entry_in_cluster].DIR_Name)) {
 					newentryref.PathName.push_back(current_LFN.cur_LFN_name);
@@ -664,6 +663,9 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 			newentryref.FileSize = sector[entry_in_cluster].DIR_FileSize;
 			newentryref.FirstClus = get_first_cluster(sector[entry_in_cluster]);
 
+			if (sector[entry_in_cluster].is_dir_record_dir()) {
+				newentryref.PathName.push_back('\\'); // Neccessery for empty dirs to be "enterable"
+			}
 			if (sector[entry_in_cluster].is_dir_record_dir() &&
 				(newentryref.FirstClus < max_cluster_FAT()) && (newentryref.FirstClus > 0x1)
 				&& (depth <= 100))

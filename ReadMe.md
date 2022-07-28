@@ -34,4 +34,4 @@ Problems
 * No support for Unicode, ASCII only
 * No support for the 8" images, including 86-DOS images
 * Directories data, time, and some attributes are not set properly
-* Does not go into the empty dirs
+
