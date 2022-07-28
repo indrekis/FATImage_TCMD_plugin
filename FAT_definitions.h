@@ -147,15 +147,15 @@ static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
 //! Valid only if bits at 0x041 show clear shutdown.
 //! All data in this sector are unreliable, should be used only as a optimization hint.
 struct FAT32_FS_InfoSec {
-	uint8_t  signature1[4];		// 0x000; Should be {0x52, 0x52, 0x61, 0x41} --  "RRaA". Sector is often situatet at the typical 
+	uint8_t  signature1[4];		// 0x000; Should be {0x52, 0x52, 0x61, 0x41} --  "RRaA". Sector is often situatet at the typical  //-V112
 								//		  start of the FAT12/FAT16 FAT, so FAT32 partition would not be misidentified.
 								//		  0x41615252  if read to uint32_t (on LE).
 	uint8_t  reserved1[480];	// 0x004; Reserved
-	uint8_t  signature2[4];		// 0x1E4; {0x72, 0x72, 0x41, 0x61} -- "rrAa" (0x61417272 if read to uint32_t on LE)
+	uint8_t  signature2[4];		// 0x1E4; {0x72, 0x72, 0x41, 0x61} -- "rrAa" (0x61417272 if read to uint32_t on LE) //-V112
 	uint32_t freeClus;			// 0x1E8; Last known number of free data clusters, 0xFFFFFFFF if unknown. 
 	uint32_t busyClus;			// 0x1EC; Last known allocated clusters, 0xFFFFFFFF if unknown. OS should start searching for free clusters here
 	uint8_t  reserved2[12];		// 0x1F0; Reserved
-	uint8_t  signature3[4];		// 0x1FC; {0x00, 0x00, 0x55, 0xAA}, 0xAA550000 if read to uint32_t on LE.
+	uint8_t  signature3[4];		// 0x1FC; {0x00, 0x00, 0x55, 0xAA}, 0xAA550000 if read to uint32_t on LE. //-V112
 };
 static_assert(sizeof(FAT32_FS_InfoSec) == 512, "Wrong boot sector structure size");
 

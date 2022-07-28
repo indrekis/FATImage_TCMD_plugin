@@ -132,8 +132,8 @@ struct archive_t
 		}
 	}
 
-	uint32_t get_bytes_per_FAT() const {
-		return get_sectors_per_FAT() * sector_size;
+	size_t get_bytes_per_FAT() const {
+		return get_sectors_per_FAT() * sector_size; //-V104
 	}
 
 	uint32_t get_root_dir_entry_count() const {
@@ -242,7 +242,7 @@ int archive_t::process_bootsector(bool read_bootsec) {
 	cluster_size_m = sector_size * bootsec.BPB_SecPerClus;
 	FAT1area_off_m = sector_size * bootsec.BPB_RsvdSecCnt;
 	rootarea_off_m = sector_size * (bootsec.BPB_RsvdSecCnt +
-		get_sectors_per_FAT() * static_cast<size_t>(bootsec.BPB_NumFATs));
+		get_sectors_per_FAT() * static_cast<size_t>(bootsec.BPB_NumFATs)); //-V104
 	dataarea_off_m = get_root_area_offset() + get_root_dir_entry_count() * sizeof(FATxx_dir_entry_t);
 
 	FAT_type = detect_FAT_type();
@@ -730,7 +730,7 @@ uint32_t archive_t::next_cluster_FAT16(uint32_t firstclus) const
 
 uint32_t archive_t::next_cluster_FAT32(uint32_t firstclus) const
 {
-	const auto FAT_byte_pre = fattable.data() + static_cast<size_t>(firstclus) * 4;
+	const auto FAT_byte_pre = fattable.data() + static_cast<size_t>(firstclus) * 4; //-V112
 	const uint32_t* word_ptr = reinterpret_cast<const uint32_t*>(FAT_byte_pre);
 	return (*word_ptr) & 0x0F'FF'FF'FF; // Zero upper 4 bits
 }
