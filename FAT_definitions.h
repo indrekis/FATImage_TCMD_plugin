@@ -410,6 +410,69 @@ inline VFAT_LFN_dir_entry_t* as_LFN_record(FATxx_dir_entry_t* dir_entry) {
 }
 static_assert(sizeof(VFAT_LFN_dir_entry_t) == 32, "Wrong size of VFAT_LFN_dir_entry_t"); //-V112
 
+#pragma pack(push, 1)
+struct partition_entry_t {
+	uint8_t	 dist_status;		// 0x00; Bit 7 -- active (bootable), old MBR: 0x00 or 0x80 only, 
+								// modern (Plug and Play BIOS Specification and BIOS Boot Specification) can store
+								// bootable disk ID here, so only 0x01-0x7F values are invalid.
+	uint8_t  start_CHS[3];		// 0x01; CHS Address of the first absolute partition sector
+								//		 cccc cccc ccss ssss hhhh hhhh 
+								//		Sector:   1-63
+								//      Cylinder: 0-1023
+								//      Head:     0-255
+	uint8_t	 type;				// 0x04; Partition type
+	uint8_t  end_CHS[3];		// 0x05; CHS Address of the last absolute partition sector
+	uint32_t start_LBA;			// 0x08; LBA of first absolute sector in the partition, >0
+	uint32_t size_sectors;		// 0x0C; Number of sectors in partition
+};
+static_assert(sizeof(partition_entry_t) == 16, "Wrong size of partition_entry_t");
+#pragma pack(pop)
+
+inline uint32_t CHS_to_heads(const uint8_t* CHS) // 3 bytes
+{
+	return CHS[0];
+}
+
+inline uint32_t CHS_to_sectors(const uint8_t* CHS) // 3 bytes
+{
+	return CHS[1] & 0x3F;
+}
+
+inline uint32_t CHS_to_cylinders(const uint8_t* CHS) // 3 bytes
+{
+	return (CHS[1] >> 6) + CHS[2];
+}
+
+inline uint32_t CHS_to_LBA(const uint8_t* CHS, uint32_t max_heads, uint32_t max_sectors) {
+	auto sectors   = CHS_to_sectors(CHS);
+	auto heads     = CHS_to_heads(CHS);
+	auto cylinders = CHS_to_cylinders(CHS);
+	
+	return (cylinders * max_heads + heads) * max_sectors + sectors - 1;
+	// max_heads typically 16
+	// max_sectors typically 63
+}
+
+#pragma pack(push, 1)
+struct MBR_t
+{
+	uint8_t	 bootcode_1[218];   // 0x000;
+//------------------------------// Disk timestamp Windows 95B+/DOS 7.10+; or just boot code
+	uint16_t zero;				// 0x0DA; zero value
+	uint8_t  orig_disk_id;		// 0x0DC; 0x80-0xFF
+	uint8_t  dsk_seconds;		// 0x0DD; 0-59
+	uint8_t  dsk_minutes;		// 0x0DE; 0-59		
+	uint8_t  dsk_hours;			// 0x0DF; 0-23
+	uint8_t	 bootcode_2[216];	// 0x0E0
+//------------------------------// Optional disk signature, UEFI, WinNT, Linux etc
+	uint32_t disk_signature;	// 0x1B8; 
+	uint16_t zero2;				// 0x01BC; Zero, can be 0x5A5A as a write-protected marker
+	partition_entry_t ptable[4];// 0x01BE; 0x01CE; 0x01DE; 0x01EE
+	uint16_t signature;         // 0x1FE; 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
+};
+static_assert(sizeof(MBR_t) == 512, "Wrong size of MBR_t"); 
+#pragma pack(pop)
+
 // See also: https://en.wikipedia.org/wiki/Filename#Comparison_of_filename_limitations
 
 //! Interestin or important formats notes:
