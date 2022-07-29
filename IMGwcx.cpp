@@ -92,7 +92,7 @@ struct archive_t
 
 	std::vector<uint8_t> fattable;
 	std::vector<arc_dir_entry_t> arc_dir_entries;
-	tFAT12BootSec bootsec{};
+	FAT_boot_sector_t bootsec{};
 
 	size_t FAT1area_off_m = 0; //number of uint8_t before first FAT area 
 	size_t rootarea_off_m = 0; //number of uint8_t before root area 

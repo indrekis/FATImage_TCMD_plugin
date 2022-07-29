@@ -17,7 +17,7 @@
 
 // DOS 3.00, 3.20 use slightly incompatible BPB here, future systems use DOS 3.31 BPB
 //! See also http://jdebp.info/FGA/bios-parameter-block.html
-struct tFAT_BPB_DOS3x0 {
+struct BPB_DOS3x0_FAT_t {
 // For reference:
 // BPB 3.00
 	uint16_t BPB_HiddSec;		// 0x01C; 2 bytes. Sectors on disk before this partition. 0 for non-partitioned disks. 
@@ -29,7 +29,7 @@ struct tFAT_BPB_DOS3x0 {
 
 // Extended Boot Record or Extended BIOS Parameter Block (EBPB) for FAT12/16; DOS 4.00+; OS/2 1.00+
 // (+ part of BPB, incompartible with DOS 3.20-)
-struct tFAT_EBPB_FAT {
+struct EBPB_FAT_t {
 	uint32_t BPB_HiddSec;       // 0x01C; 4 bytes. Sectors on disk before this partition -- the LBA of the beginning of the partition. 
 								//		  0 for non-partitioned disks. Do not use if 0x013 == 0. 
 	uint32_t BPB_TotSec32;		// 0x020; if more than 65535, then  0x013 == 0
@@ -47,7 +47,7 @@ struct tFAT_EBPB_FAT {
 }; // Sizeof 0x22 = 34 + padding, sizeof tFAT_EBPB_FAT32 == 0x3E == 62
 
 // (+ part of BPB, incompartible with DOS 3.20-)
-struct tFAT_EBPB_FAT32 {
+struct EBPB_FAT32_t {
 	uint32_t BPB_HiddSec;       // 0x01C; 4 bytes. Sectors on disk before this partition -- the LBA of the beginning of the partition. 
 								//		  0 for non-partitioned disks. Do not use if 0x013 == 0. 
 	uint32_t BPB_TotSec32;		// 0x020; if more than 65535, then  0x013 == 0
@@ -82,10 +82,10 @@ struct tFAT_EBPB_FAT32 {
 	}
 }; // 0x3E = 62
 
-static_assert(sizeof(tFAT_BPB_DOS3x0) == sizeof(tFAT_EBPB_FAT), "Wrong variadic BPB part size");
-static_assert(sizeof(tFAT_EBPB_FAT) == sizeof(tFAT_EBPB_FAT32), "Wrong variadic BPB part size");
+static_assert(sizeof(BPB_DOS3x0_FAT_t) == sizeof(EBPB_FAT_t), "Wrong variadic BPB part size");
+static_assert(sizeof(EBPB_FAT_t) == sizeof(EBPB_FAT32_t), "Wrong variadic BPB part size");
 
-struct tFAT12BootSec
+struct FAT_boot_sector_t
 {
 	//--------------------------// Common part for the DOS 2.0+
 	uint8_t  BS_jmpBoot[3];		// 0x000
@@ -105,9 +105,9 @@ struct tFAT12BootSec
 	//--------------------------// Relies here on correct type punning. GCC supports it: https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html#Type%2Dpunning
 								// Didn't found (yet?) in MSVC docs, but it's headers use type punning heavily. Clang -- unknown.
 	union {
-		tFAT_BPB_DOS3x0 BPB_DOS3x0;
-		tFAT_EBPB_FAT	EBPB_FAT;
-		tFAT_EBPB_FAT32 EBPB_FAT32;
+		BPB_DOS3x0_FAT_t BPB_DOS3x0;
+		EBPB_FAT_t	EBPB_FAT;
+		EBPB_FAT32_t EBPB_FAT32;
 	};
 	uint8_t  remaining_part[420];
 	uint16_t signature;         // 0x1FE; 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
@@ -142,7 +142,7 @@ struct tFAT12BootSec
 #endif 
 };
 static_assert(std::endian::native == std::endian::little, "Wrong endiannes");
-static_assert(sizeof(tFAT12BootSec) == 512, "Wrong boot sector structure size");
+static_assert(sizeof(FAT_boot_sector_t) == 512, "Wrong boot sector structure size");
 
 //! Valid only if bits at 0x041 show clear shutdown.
 //! All data in this sector are unreliable, should be used only as a optimization hint.
