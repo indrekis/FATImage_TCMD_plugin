@@ -238,7 +238,7 @@ struct FATxx_dir_entry_t
 	}
 
 	bool is_dir_record_deleted() const {
-		return (DIR_Name[0] == '\xE5') || (DIR_Name[0] == '\x05');
+		return (DIR_Name[0] == '\xE5');
 	}
 
 	bool is_dir_record_unknown() const {
