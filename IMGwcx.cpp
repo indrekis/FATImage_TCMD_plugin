@@ -859,6 +859,7 @@ int archive_t::search_for_bootsector() {
 		boot_sector_offset = (EB_pos - buffer.get());
 		return 0;
 	}
+	return E_UNKNOWN_FORMAT;
 }
 
 using archive_HANDLE = archive_t*;

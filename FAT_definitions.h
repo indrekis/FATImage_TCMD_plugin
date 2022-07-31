@@ -480,5 +480,7 @@ static_assert(sizeof(MBR_t) == 512, "Wrong size of MBR_t");
 // 2. http://ucsd-psystem-fs.sourceforge.net/ http://ucsd-psystem-fs.sourceforge.net/ucsd-psystem-fs-1.22.pdf 
 // 3. CP/M FS formats: https://www.seasip.info/Cpm/formats.html
 // 4. 86-DOS FAT variants: https://en.wikipedia.org/wiki/86-DOS#Formats
+// 
+// See also https://github.com/aaru-dps/Aaru -- Aaru Data Preservation Suite
 #endif 
 
