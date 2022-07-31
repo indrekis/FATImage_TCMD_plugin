@@ -426,24 +426,7 @@ inline VFAT_LFN_dir_entry_t* as_LFN_record(FATxx_dir_entry_t* dir_entry) {
 }
 static_assert(sizeof(VFAT_LFN_dir_entry_t) == 32, "Wrong size of VFAT_LFN_dir_entry_t"); //-V112
 
-#pragma pack(push, 1)
-struct partition_entry_t {
-	uint8_t	 dist_status;		// 0x00; Bit 7 -- active (bootable), old MBR: 0x00 or 0x80 only, 
-								// modern (Plug and Play BIOS Specification and BIOS Boot Specification) can store
-								// bootable disk ID here, so only 0x01-0x7F values are invalid.
-	uint8_t  start_CHS[3];		// 0x01; CHS Address of the first absolute partition sector
-								//		 cccc cccc ccss ssss hhhh hhhh 
-								//		Sector:   1-63
-								//      Cylinder: 0-1023
-								//      Head:     0-255
-	uint8_t	 type;				// 0x04; Partition type
-	uint8_t  end_CHS[3];		// 0x05; CHS Address of the last absolute partition sector
-	uint32_t start_LBA;			// 0x08; LBA of first absolute sector in the partition, >0
-	uint32_t size_sectors;		// 0x0C; Number of sectors in partition
-};
-static_assert(sizeof(partition_entry_t) == 16, "Wrong size of partition_entry_t");
-#pragma pack(pop)
-
+//---------MBR----------------------------------------------
 inline uint32_t CHS_to_heads(const uint8_t* CHS) // 3 bytes
 {
 	return CHS[0];
@@ -460,14 +443,104 @@ inline uint32_t CHS_to_cylinders(const uint8_t* CHS) // 3 bytes
 }
 
 inline uint32_t CHS_to_LBA(const uint8_t* CHS, uint32_t max_heads, uint32_t max_sectors) {
-	auto sectors   = CHS_to_sectors(CHS);
-	auto heads     = CHS_to_heads(CHS);
+	auto sectors = CHS_to_sectors(CHS);
+	auto heads = CHS_to_heads(CHS);
 	auto cylinders = CHS_to_cylinders(CHS);
-	
+
 	return (cylinders * max_heads + heads) * max_sectors + sectors - 1;
 	// max_heads typically 16
 	// max_sectors typically 63
 }
+
+
+#pragma pack(push, 1)
+struct partition_entry_t {
+	uint8_t	 disk_status;		// 0x00; Bit 7 -- active (bootable), old MBR: 0x00 or 0x80 only, 
+								// modern (Plug and Play BIOS Specification and BIOS Boot Specification) can store
+								// bootable disk ID here, so only 0x01-0x7F values are invalid.
+	uint8_t  start_CHS[3];		// 0x01; CHS Address of the first absolute partition sector
+								//		 cccc cccc ccss ssss hhhh hhhh 
+								//		Sector:   1-63
+								//      Cylinder: 0-1023
+								//      Head:     0-255
+	uint8_t	 type;				// 0x04; Partition type
+	uint8_t  end_CHS[3];		// 0x05; CHS Address of the last absolute partition sector
+	uint32_t start_LBA;			// 0x08; LBA of first absolute sector in the partition, >0
+	uint32_t size_sectors;		// 0x0C; Number of sectors in partition
+
+	bool is_MBR_disk_status_OK() const {
+		if (disk_status >= 0x01 && disk_status <= 0x7F)
+			return false;
+		else
+			return true;
+	}
+	bool is_start_CHS_zero() const {
+		return start_CHS[0] == 0 && start_CHS[1] == 0 && start_CHS[2] == 0;
+	}
+	bool is_end_CHS_zero() const {
+		return end_CHS[0] == 0 && end_CHS[1] == 0 && end_CHS[2] == 0;
+	}
+	bool is_CHSs_zero() const {
+		return is_start_CHS_zero() && is_end_CHS_zero();
+	}
+	bool is_LBAs_zero() const {
+		return start_LBA == 0 && size_sectors == 0;
+	}
+	uint32_t get_first_sec_by_LBA() const {
+		return start_LBA;
+	}
+	uint32_t get_last_sec_by_LBA() const {
+		return start_LBA + size_sectors - 1;
+	}
+	uint32_t get_first_sec_by_CHS(uint32_t max_heads, uint32_t max_sectors) const {
+		return CHS_to_LBA(start_CHS, max_heads, max_sectors);
+	}
+	uint32_t get_last_sec_by_CHS(uint32_t max_heads, uint32_t max_sectors) const {
+		return CHS_to_LBA(end_CHS, max_heads, max_sectors);
+	}
+	bool is_total_zero() const { // Check for empty (unused) records 
+		return disk_status == 0 && type == 0 && is_CHSs_zero() && is_LBAs_zero();
+	}
+
+	//! Based on https://en.wikipedia.org/wiki/Partition_type
+	bool is_extended() const {
+		switch (type) {
+		case 0x05: // MS extended partition with CHS addressing
+			return true; 
+		case 0x0F: // MS extended partition with LBA addressing
+			return true; 
+		case 0x85: // Linux extended partition with CHS addressing
+			return true; 
+		case 0xC0:
+		case 0xC1:
+		case 0xC4:
+		case 0xC5:
+		case 0xC6:
+		case 0xCB: 
+		case 0xCC:
+		case 0xCE:
+		case 0xCF: // DR DOS Secured partitions. Not tested.
+			return true;
+		case 0xD0:
+		case 0xD1:
+		case 0xD4:
+		case 0xD5:
+		case 0xD6: // Novel Multiuser DOS partitions. Not tested.
+			return true;
+		case 0x1F: //  	OS/2 Boot Manager hidden extended partition with LBA
+			return true; 
+		case 0x91: // FreeDOS hidden extended partition with CHS 
+		case 0x9B: // FreeDOS hidden extended partition with LBA
+			return true;
+		default:
+			return false;
+		}
+	}
+};
+static_assert(sizeof(partition_entry_t) == 16, "Wrong size of partition_entry_t");
+#pragma pack(pop)
+
+
 
 #pragma pack(push, 1)
 struct MBR_t
@@ -485,6 +558,14 @@ struct MBR_t
 	uint16_t zero2;				// 0x01BC; Zero, can be 0x5A5A as a write-protected marker
 	partition_entry_t ptable[4];// 0x01BE; 0x01CE; 0x01DE; 0x01EE
 	uint16_t signature;         // 0x1FE; 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
+
+	static constexpr int ptables() { return sizeof(ptable)/sizeof(ptable[0]); }
+	bool is_correct_extended_record() const {
+		return ptable[2].is_total_zero() && ptable[3].is_total_zero();
+	}
+	bool has_next_extended_record() const {
+		return !ptable[1].is_total_zero();
+	}
 };
 static_assert(sizeof(MBR_t) == 512, "Wrong size of MBR_t"); 
 #pragma pack(pop)

@@ -112,7 +112,7 @@ struct FAT_image_t
 			close_file(hArchFile);
 	}
 
-	size_t set_boot_sector_offset(size_t off) {
+	void set_boot_sector_offset(size_t off) {
 		boot_sector_offset = off;
 	}
 
@@ -216,6 +216,12 @@ struct FAT_image_t
 	};
 };
 
+struct partition_info_t {
+	uint32_t first_sector = 0;
+	uint32_t last_sector = 0;
+
+};
+
 struct whole_disk_t {
 	static constexpr size_t sector_size = 512; // Duplicated in FAT_image_t for the future support of 
 											   // non-partitioned disks with other sizes of sectors
@@ -225,14 +231,17 @@ struct whole_disk_t {
 	tChangeVolProc   pLocChangeVol = nullptr;
 	tProcessDataProc pLocProcessData = nullptr;
 
-	whole_disk_t(on_bad_BPB_callback_t clb, size_t vol_size, file_handle_t fh, int openmode)
+	whole_disk_t(on_bad_BPB_callback_t clb, const char* archname_in, size_t vol_size, file_handle_t fh, int openmode):
+		hArchFile{ fh }
 	{
+		archname.push_back(archname_in);
 		// First disk represents also non-partitioned image -- so, initially, it's size = whole image size.
 		disks.emplace_back(clb, vol_size, fh, openmode);
 	}
 
-	std::vector<FAT_image_t>	disks;
-	std::vector<MBR_t>		mbrs{ 1 };
+	std::vector<FAT_image_t>		disks;
+	std::vector<MBR_t>				mbrs{ 1 };
+	std::vector<partition_info_t>	partition_info;
 	size_t disc_counter = 0;
 
 	int detect_MBR();
@@ -876,6 +885,7 @@ int FAT_image_t::search_for_bootsector() {
 
 //------- whole_disk_t implementation --------------------------
 int whole_disk_t::detect_MBR() {
+	set_file_pointer(hArchFile, 0);
 	auto result = read_file(hArchFile, &mbrs[0], sector_size);
 	if (result != sector_size) {
 		return E_UNKNOWN_FORMAT;
@@ -883,6 +893,10 @@ int whole_disk_t::detect_MBR() {
 	if (mbrs[0].signature != 0xAA55) {
 		return E_UNKNOWN_FORMAT;
 	}
+	for (int i = 0; i < mbrs[0].ptables(); ++i) {
+		if (!mbrs[0].ptable[i].is_MBR_disk_status_OK())
+			return E_UNKNOWN_FORMAT;
+	} 
 	return 0;
 }
 
@@ -892,7 +906,93 @@ int whole_disk_t::process_MBR() {
 	auto res = detect_MBR();
 	if (res)
 		return res;
-	return E_UNKNOWN_FORMAT;
+	int extended_partition_idx = -1;
+	for (int i = 0; i < mbrs[0].ptables(); ++i) {
+		if (mbrs[0].ptable[i].is_total_zero())
+			break;
+		if (mbrs[0].ptable[i].is_LBAs_zero()) {
+#ifdef _WIN32
+				MessageBoxEx(
+					NULL,
+					TEXT("CHS-based partition, skipping"),
+					TEXT("MBR error"),
+					MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1,
+					0
+				);
+#endif 
+				continue;
+			}
+			partition_info_t curp;
+			curp.first_sector = mbrs[0].ptable[i].get_first_sec_by_LBA();
+			curp.last_sector = mbrs[0].ptable[i].get_last_sec_by_LBA();
+			if (mbrs[0].ptable[i].is_extended()) { //-V807
+				if (extended_partition_idx != -1) {
+#ifdef _WIN32
+					MessageBoxEx(
+						NULL,
+						TEXT("Too many extended partitions"),
+						TEXT("MBR error"),
+						MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1,
+						0
+					);
+#endif 
+				}
+				else {
+					extended_partition_idx = i;
+				}
+				while (true) {
+					set_file_pointer(hArchFile, curp.first_sector * sector_size);
+					mbrs.push_back({});
+					auto result = read_file(hArchFile, &mbrs.back(), sector_size);
+					if (result != sector_size) {
+#ifdef _WIN32
+							MessageBoxEx(
+								NULL,
+								TEXT("Cannot read extended partition"),
+								TEXT("MBR error"),
+								MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1,
+								0
+							);
+#endif 
+						break;
+					}
+					partition_info_t curp_ext;
+					if (mbrs.back().ptable[i].is_LBAs_zero()) {
+#ifdef _WIN32
+							MessageBoxEx(
+								NULL,
+								TEXT("CHS-based extended partition volume, skipping"),
+								TEXT("MBR error"),
+								MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1,
+								0
+							);
+#endif 
+						continue;
+					}
+					// Starting sector for extended boot record (EBR) is a relative offset between this 
+					// EBR sector and the first sector of the logical partition
+					curp_ext.first_sector = curp.first_sector
+						+ mbrs.back().ptable[0].get_first_sec_by_LBA();
+					// EBR size does not accounts for unused sectors before the EBR and start of the partition
+					curp_ext.last_sector = curp_ext.first_sector
+						+ mbrs.back().ptable[0].get_last_sec_by_LBA();
+					partition_info.push_back(curp_ext);
+					if (!mbrs.back().has_next_extended_record())
+						break;
+					// EBR next starting sector = LBA address of next EBR minus LBA address of extended partition's first EBR
+					curp.first_sector = curp.first_sector + mbrs.back().ptable[1].get_first_sec_by_LBA();
+					// EBR next size starts counts from the next EBR:
+					curp.last_sector = curp_ext.last_sector + mbrs.back().ptable[1].get_last_sec_by_LBA();
+				}
+			}
+			else {
+				partition_info.push_back(curp);
+			}
+	}
+
+	if(partition_info.empty())
+		return E_UNKNOWN_FORMAT;
+	return 0;
 }
 
 
@@ -919,7 +1019,7 @@ extern "C" {
 			return nullptr;
 		}
 		try {
-			arch = std::make_unique<whole_disk_t>(winAPI_msgbox_on_bad_BPB, archive_file_size,
+			arch = std::make_unique<whole_disk_t>(winAPI_msgbox_on_bad_BPB, ArchiveData->ArcName, archive_file_size,
 				hArchFile, ArchiveData->OpenMode);
 		}
 		catch (std::bad_alloc&) {
@@ -936,9 +1036,24 @@ extern "C" {
 		}
 		if (err_code != 0) {
 			if (plugin_config.process_MBR) {
-				// Reread boot here! 
-				// err_code = detect_MBR();
-				err_code = E_UNKNOWN_FORMAT;
+				err_code = arch->process_MBR();
+				if (!err_code) {
+					if (arch->partition_info.size() == 1) {
+						// Single partition -- treat as a non-partitioned disk for viewing
+						arch->disks[0].set_boot_sector_offset(arch->partition_info[0].first_sector * arch->sector_size);
+						err_code = arch->disks[0].process_bootsector(true);
+					}
+				}
+				else {
+					MessageBoxEx(
+						NULL,
+						TEXT("Temp"),
+						TEXT("MBR error"),
+						MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1,
+						0
+					);
+					err_code = E_UNKNOWN_FORMAT;
+				}
 			}
 		}
 		if (err_code != 0) {
@@ -970,7 +1085,7 @@ extern "C" {
 	// TCmd calls ReadHeader to find out what files are in the archive
 	DLLEXPORT int STDCALL ReadHeader(archive_HANDLE hArcData, tHeaderData* HeaderData)
 	{
-		if (hArcData->disks[hArcData->disc_counter].counter == 
+		if (hArcData->disks[hArcData->disc_counter].counter ==				  //-V104
 			hArcData->disks[hArcData->disc_counter].arc_dir_entries.size()) { //-V104
 			// TODO: Add walk throug all disks (partitions)
 			hArcData->disks[hArcData->disc_counter].counter = 0;

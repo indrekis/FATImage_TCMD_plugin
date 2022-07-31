@@ -50,11 +50,13 @@ Compilation
 
 Code can be compiled using the Visual Studio project or CMakeLists.txt (tested using MSVC and MinGW). Uses C++20, with no external dependencies.
 
-Problems
-========
+Problems and limitations
+========================
 * Read-only
 * Support for the exFAT not planned (yet) 
+* No GPT support (yet)
 * No support for Unicode, ASCII only
 * No support for the 8" images, including 86-DOS images
 * Directories data, time, and some attributes are not set properly
+* Not yet tested on large (close to 2Tb) images.
 
