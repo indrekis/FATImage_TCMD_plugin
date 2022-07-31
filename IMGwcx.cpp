@@ -74,6 +74,10 @@ struct plugin_config_t {
 	bool process_DOS1xx_images = true;
 	bool process_MBR = true;
 	bool process_DOS1xx_exceptions = true; // Highly specialized exceptions for the popular images found in the Inet
+	bool search_for_boot_sector = true;	   // WinImage-like behavior -- if boot is not on the beginning of the file,
+										   // search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA
+	size_t search_for_boot_sector_range = 64 * 1024;
+
 };
 
 struct archive_t
@@ -87,6 +91,7 @@ struct archive_t
 	int openmode_m = PK_OM_LIST;
 	file_handle_t hArchFile = file_handle_t();    //opened file handle
 	size_t archive_file_size = 0;
+	size_t boot_sector_offset = 0;
 
 	FAT_types FAT_type = unknow_type;
 
@@ -167,6 +172,8 @@ struct archive_t
 	int process_bootsector(bool read_bootsec);
 	int process_DOS1xx_image();
 
+	int search_for_bootsector();
+
 	int load_FAT();
 
 	FAT_types detect_FAT_type() const;
@@ -216,16 +223,25 @@ struct archive_t
 	};
 };
 
+struct whole_disk_t {
+	std::vector<archive_t>	disks;
+	std::vector<MBR_t>		mbrs{ 1 };
+
+	int detect_MBR();
+	int process_MBR();
+};
+
 //------- archive_t implementation -----------------------------
 
 int archive_t::process_bootsector(bool read_bootsec) {
 	if(read_bootsec){
+		set_file_pointer(hArchFile, boot_sector_offset);
 		auto result = read_file(hArchFile, &bootsec, sector_size);
 		if (result != sector_size) {
 			return E_EREAD;
 		}
 	}
-	// if read_bootsec == false -- user prepared bootsector
+	// if read_bootsec == false -- user preread bootsector
 
 	if (bootsec.BPB_bytesPerSec != sector_size) {
 		// TODO: Some formats, like DMF, use other sizes
@@ -345,7 +361,7 @@ int archive_t::process_DOS1xx_image() {
 	
 	uint8_t media_descr = 0;
 
-	auto res = set_file_pointer(hArchFile, sector_size);
+	auto res = set_file_pointer(hArchFile, boot_sector_offset + sector_size);
 	if (!res) {
 		return E_EREAD;
 	}
@@ -437,7 +453,7 @@ int archive_t::load_FAT() {
 		return E_NO_MEMORY;
 	}
 	// Read FAT table
-	set_file_pointer(hArchFile, get_FAT1_area_offset());
+	set_file_pointer(hArchFile, boot_sector_offset + get_FAT1_area_offset());
 	auto result = read_file(hArchFile, fattable.data(), fat_size_bytes);
 	if (result != fat_size_bytes)
 	{
@@ -528,7 +544,7 @@ int archive_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 				close_file(hUnpFile);
 				return E_UNKNOWN_FORMAT;
 			}
-			set_file_pointer(hArchFile, cluster_to_image_off(nextclus));
+			set_file_pointer(hArchFile, boot_sector_offset + cluster_to_image_off(nextclus));
 			size_t towrite = std::min<size_t>(get_cluster_size(), remaining);
 			size_t result = read_file(hArchFile, buff.data(), towrite);
 			if (result != towrite)
@@ -570,11 +586,11 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 	size_t portion_size = 0;
 	if (firstclus == 0)
 	{   // Read whole FAT12/16 dir at once
-		set_file_pointer(hArchFile, get_root_area_offset());
+		set_file_pointer(hArchFile, boot_sector_offset + get_root_area_offset());
 		portion_size = get_root_dir_size();
 	}
 	else {
-		set_file_pointer(hArchFile, cluster_to_image_off(firstclus));
+		set_file_pointer(hArchFile, boot_sector_offset + cluster_to_image_off(firstclus));
 		portion_size = static_cast<size_t>(get_cluster_size());
 	}
 	size_t records_number = portion_size / sizeof(FATxx_dir_entry_t);
@@ -682,7 +698,7 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 		else {
 			firstclus = next_cluster_FAT(firstclus);
 			if ((firstclus <= 1) || (firstclus >= max_cluster_FAT())) { return 0; }
-			set_file_pointer(hArchFile, cluster_to_image_off(firstclus)); //-V104
+			set_file_pointer(hArchFile, boot_sector_offset + cluster_to_image_off(firstclus)); //-V104
 		}
 		result = read_file(hArchFile, sector.get(), portion_size);
 		if (result != portion_size) {
@@ -816,7 +832,56 @@ bool archive_t::is_end_of_chain_FAT(uint32_t cluster) const
 	return cluster >= min_end_of_chain_FAT();
 }
 
+int archive_t::search_for_bootsector() {
+	// Search is unaligned to sectors its main intent is to skip metainfo added by some imaging tools
+	std::unique_ptr<uint8_t[]> buffer{ new(nothrow) uint8_t[plugin_config.search_for_boot_sector_range] };
+	if (buffer == nullptr) {
+		return E_NO_MEMORY;
+	}
+	set_file_pointer(hArchFile, 0);
+	auto result = read_file(hArchFile, buffer.get(), plugin_config.search_for_boot_sector_range);
+	if (result != plugin_config.search_for_boot_sector_range) {
+		return E_EREAD;
+	}
+	for(size_t i = 0; i<plugin_config.search_for_boot_sector_range-sector_size+1; ++i) {
+		uint8_t* EB_pos = static_cast<uint8_t*>(memchr(buffer.get() + i, 0xEB, plugin_config.search_for_boot_sector_range - i));
+		if (EB_pos == nullptr) {
+			return 1;
+		}
+		if (*(EB_pos + 2) != 0x90) {
+			i = (EB_pos - buffer.get()) + 1;
+			continue;
+		}
+		if (*(EB_pos + 510) != 0x55 || *(EB_pos + 511) != 0xAA) {
+			i = (EB_pos - buffer.get()) + 1;
+			continue;
+		}
+		boot_sector_offset = (EB_pos - buffer.get());
+		return 0;
+	}
+}
+
 using archive_HANDLE = archive_t*;
+
+//------- whole_disk_t implementation --------------------------
+int whole_disk_t::detect_MBR() {
+#if 0
+	auto result = read_file(hArchFile, &bootsec, sector_size);
+	if (result != arch->sector_size) {
+		return E_UNKNOWN_FORMAT;
+	}
+	if (arch->bootsec.signature != 0xAA55) {
+		return E_UNKNOWN_FORMAT;
+	}
+	return 0;
+#endif
+	return E_UNKNOWN_FORMAT;
+}
+
+int whole_disk_t::process_MBR() {
+	return E_UNKNOWN_FORMAT;
+}
+
 
 //-----------------------=[ DLL exports ]=--------------------
 
@@ -849,19 +914,27 @@ extern "C" {
 		}
 
 		auto err_code = arch->process_bootsector(true);
+
 		if (err_code != 0) {
-			if ( arch->plugin_config.process_DOS1xx_images ) {
+			if (arch->plugin_config.process_DOS1xx_images) {
 				err_code = arch->process_DOS1xx_image();
 			}
-			else if ( arch->plugin_config.process_MBR ) {
+		}
+		if (err_code != 0) {
+			if (arch->plugin_config.process_MBR) {
 				// Reread boot here! 
-				ArchiveData->OpenResult = E_UNKNOWN_FORMAT; // Not yet implemented
-				return nullptr;
+				// err_code = detect_MBR();
+				err_code = E_UNKNOWN_FORMAT;
 			}
-			else {
-				ArchiveData->OpenResult = err_code;
-				return nullptr;
+		}
+		if (err_code != 0) {
+			if (arch->search_for_bootsector() == 0) {
+				err_code = arch->process_bootsector(true);
 			}
+		}
+		if (err_code != 0) {
+			ArchiveData->OpenResult = err_code;
+			return nullptr;
 		}
 
 		err_code = arch->load_FAT();
