@@ -73,17 +73,17 @@ struct arc_dir_entry_t
 
 plugin_config_t plugin_config; 
 
+using on_bad_BPB_callback_t = int(*)(void*, int openmode);
+
 struct FAT_image_t
 {
 	enum FAT_types { unknow_type, FAT12_type, FAT16_type, FAT32_type, exFAT_type, FAT_DOS100_type, FAT_DOS110_type};
 
 	static constexpr size_t sector_size = 512;
-	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
-	using on_bad_BPB_callback_t = int(*)(void*, int openmode);
 	on_bad_BPB_callback_t on_bad_BPB_callback = nullptr;
 	int openmode_m = PK_OM_LIST;
 	file_handle_t hArchFile = file_handle_t();    //opened file handle
-	size_t archive_file_size = 0;
+	size_t archive_file_size = 0;	// TODO: rename to volume_size
 	size_t boot_sector_offset = 0;
 
 	FAT_types FAT_type = unknow_type;
@@ -99,16 +99,12 @@ struct FAT_image_t
 	uint32_t cluster_size_m = 0;
 	uint32_t counter = 0;
 
-	tChangeVolProc   pLocChangeVol = nullptr;
-	tProcessDataProc pLocProcessData = nullptr;
+	FAT_image_t(const FAT_image_t&) = default;
+	FAT_image_t& operator=(const FAT_image_t&) = default;
 
-	FAT_image_t(const FAT_image_t&) = delete;
-	FAT_image_t& operator=(const FAT_image_t&) = delete;
-
-	FAT_image_t(on_bad_BPB_callback_t clb, const char* arcnm, file_handle_t fh, int openmode) :
-		archname(arcnm), on_bad_BPB_callback(clb), openmode_m(openmode), hArchFile(fh)
-	{
-		archive_file_size = get_file_size(archname.data());
+	FAT_image_t(on_bad_BPB_callback_t clb, size_t vol_size, file_handle_t fh, int openmode) :
+		archive_file_size(vol_size), on_bad_BPB_callback(clb), openmode_m(openmode), hArchFile(fh)
+	{		
 	}
 
 	~FAT_image_t() {
@@ -116,6 +112,11 @@ struct FAT_image_t
 			close_file(hArchFile);
 	}
 
+	size_t set_boot_sector_offset(size_t off) {
+		boot_sector_offset = off;
+	}
+
+	// TODO: boot_sector_offset + ...
 	size_t cluster_to_image_off(uint32_t cluster) {
 		return get_data_area_offset() + static_cast<size_t>(cluster - 2) * get_cluster_size(); //-V104
 	}
@@ -216,8 +217,23 @@ struct FAT_image_t
 };
 
 struct whole_disk_t {
+	static constexpr size_t sector_size = 512; // Duplicated in FAT_image_t for the future support of 
+											   // non-partitioned disks with other sizes of sectors
+	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
+	file_handle_t hArchFile = file_handle_t();    //opened file handles
+
+	tChangeVolProc   pLocChangeVol = nullptr;
+	tProcessDataProc pLocProcessData = nullptr;
+
+	whole_disk_t(on_bad_BPB_callback_t clb, size_t vol_size, file_handle_t fh, int openmode)
+	{
+		// First disk represents also non-partitioned image -- so, initially, it's size = whole image size.
+		disks.emplace_back(clb, vol_size, fh, openmode);
+	}
+
 	std::vector<FAT_image_t>	disks;
 	std::vector<MBR_t>		mbrs{ 1 };
+	size_t disc_counter = 0;
 
 	int detect_MBR();
 	int process_MBR();
@@ -269,7 +285,7 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 		if ((get_sectors_per_FAT() < 1) || (get_sectors_per_FAT() > 2'097'152)) { // get_sectors_per_FAT() < 512 according to standard
 			return E_UNKNOWN_FORMAT;
 		}
-		// There should not be those velues in correct FAT32
+		// There should not be those values in correct FAT32
 		if (bootsec.EBPB_FAT.BS_BootSig == 0x29 || bootsec.EBPB_FAT.BS_BootSig == 0x28) {
 			return E_UNKNOWN_FORMAT;
 		}
@@ -858,24 +874,24 @@ int FAT_image_t::search_for_bootsector() {
 	return E_UNKNOWN_FORMAT;
 }
 
-using archive_HANDLE = FAT_image_t*;
-
 //------- whole_disk_t implementation --------------------------
 int whole_disk_t::detect_MBR() {
-#if 0
-	auto result = read_file(hArchFile, &bootsec, sector_size);
-	if (result != arch->sector_size) {
+	auto result = read_file(hArchFile, &mbrs[0], sector_size);
+	if (result != sector_size) {
 		return E_UNKNOWN_FORMAT;
 	}
-	if (arch->bootsec.signature != 0xAA55) {
+	if (mbrs[0].signature != 0xAA55) {
 		return E_UNKNOWN_FORMAT;
 	}
 	return 0;
-#endif
-	return E_UNKNOWN_FORMAT;
 }
 
+using archive_HANDLE = whole_disk_t*;
+
 int whole_disk_t::process_MBR() {
+	auto res = detect_MBR();
+	if (res)
+		return res;
 	return E_UNKNOWN_FORMAT;
 }
 
@@ -886,7 +902,7 @@ extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
-		std::unique_ptr<FAT_image_t> arch; // TCmd API expects HANDLE/raw pointer,
+		std::unique_ptr<whole_disk_t> arch; // TCmd API expects HANDLE/raw pointer,
 										// so smart pointer is used to manage cleanup on errors 
 										// only inside this function
 		//! Not used by TCmd yet.
@@ -895,6 +911,7 @@ extern "C" {
 		ArchiveData->CmtSize = 0;
 		ArchiveData->CmtState = 0;
 
+		size_t archive_file_size = get_file_size(ArchiveData->ArcName);
 		auto hArchFile = open_file_shared_read(ArchiveData->ArcName);
 		if (hArchFile == file_open_error_v)
 		{
@@ -902,7 +919,7 @@ extern "C" {
 			return nullptr;
 		}
 		try {
-			arch = std::make_unique<FAT_image_t>(winAPI_msgbox_on_bad_BPB, ArchiveData->ArcName,
+			arch = std::make_unique<whole_disk_t>(winAPI_msgbox_on_bad_BPB, archive_file_size,
 				hArchFile, ArchiveData->OpenMode);
 		}
 		catch (std::bad_alloc&) {
@@ -910,11 +927,11 @@ extern "C" {
 			return nullptr;
 		}
 
-		auto err_code = arch->process_bootsector(true);
+		auto err_code = arch->disks[0].process_bootsector(true);
 
 		if (err_code != 0) {
 			if (plugin_config.process_DOS1xx_images) {
-				err_code = arch->process_DOS1xx_image();
+				err_code = arch->disks[0].process_DOS1xx_image();
 			}
 		}
 		if (err_code != 0) {
@@ -925,8 +942,8 @@ extern "C" {
 			}
 		}
 		if (err_code != 0) {
-			if (arch->search_for_bootsector() == 0) {
-				err_code = arch->process_bootsector(true);
+			if (arch->disks[0].search_for_bootsector() == 0) {
+				err_code = arch->disks[0].process_bootsector(true);
 			}
 		}
 		if (err_code != 0) {
@@ -934,13 +951,13 @@ extern "C" {
 			return nullptr;
 		}
 
-		err_code = arch->load_FAT();
+		err_code = arch->disks[0].load_FAT();
 		if (err_code != 0) {
 			ArchiveData->OpenResult = err_code;
 			return nullptr;
 		}
 
-		err_code = arch->load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
+		err_code = arch->disks[0].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
 		if (err_code != 0) {
 			ArchiveData->OpenResult = err_code;
 			return nullptr;
@@ -953,17 +970,19 @@ extern "C" {
 	// TCmd calls ReadHeader to find out what files are in the archive
 	DLLEXPORT int STDCALL ReadHeader(archive_HANDLE hArcData, tHeaderData* HeaderData)
 	{
-		if (hArcData->counter == hArcData->arc_dir_entries.size()) { //-V104
-			hArcData->counter = 0;
+		if (hArcData->disks[hArcData->disc_counter].counter == 
+			hArcData->disks[hArcData->disc_counter].arc_dir_entries.size()) { //-V104
+			// TODO: Add walk throug all disks (partitions)
+			hArcData->disks[hArcData->disc_counter].counter = 0;
 			return E_END_ARCHIVE;
 		}
-
+		auto& current_disk = hArcData->disks[hArcData->disc_counter];
 		strcpy(HeaderData->ArcName, hArcData->archname.data());
-		strcpy(HeaderData->FileName, hArcData->arc_dir_entries[hArcData->counter].PathName.data());
-		HeaderData->FileAttr = hArcData->arc_dir_entries[hArcData->counter].FileAttr;
-		HeaderData->FileTime = hArcData->arc_dir_entries[hArcData->counter].FileTime;
+		strcpy(HeaderData->FileName, current_disk.arc_dir_entries[current_disk.counter].PathName.data());
+		HeaderData->FileAttr = current_disk.arc_dir_entries[current_disk.counter].FileAttr;
+		HeaderData->FileTime = current_disk.arc_dir_entries[current_disk.counter].FileTime;
 		// For files larger than 2Gb -- implement tHeaderDataEx
-		HeaderData->PackSize = static_cast<int>(hArcData->arc_dir_entries[hArcData->counter].FileSize);
+		HeaderData->PackSize = static_cast<int>(current_disk.arc_dir_entries[current_disk.counter].FileSize);
 		HeaderData->UnpSize = HeaderData->PackSize;
 		HeaderData->CmtBuf = 0;
 		HeaderData->CmtBufSize = 0;
@@ -972,20 +991,19 @@ extern "C" {
 		HeaderData->UnpVer = 0;
 		HeaderData->Method = 0;
 		HeaderData->FileCRC = 0;
-		hArcData->counter++;
+		++current_disk.counter;
 		return 0; // OK
 	}
 
 	// ProcessFile should unpack the specified file or test the integrity of the archive
 	DLLEXPORT int STDCALL ProcessFile(archive_HANDLE hArcData, int Operation, char* DestPath, char* DestName) //-V2009
 	{
-		FAT_image_t* arch = hArcData;
 		char dest[MAX_PATH] = "";
 		file_handle_t hUnpFile;
 
 		if (Operation == PK_SKIP) return 0;
 
-		if (arch->counter == 0)
+		if (hArcData->disks[hArcData->disc_counter].counter == 0)
 			return E_END_ARCHIVE;
 		// if (newentry->FileAttr & ATTR_DIRECTORY) return 0;
 
@@ -1009,11 +1027,13 @@ extern "C" {
 		if (hUnpFile == file_open_error_v)
 			return E_ECREATE;
 
-		auto res = arch->extract_to_file(hUnpFile, arch->counter - 1);
+		auto res = hArcData->disks[hArcData->disc_counter].extract_to_file(hUnpFile, 
+			hArcData->disks[hArcData->disc_counter].counter - 1);
 		if (res != 0) {
 			return res;
 		}
-		const auto& cur_entry = arch->arc_dir_entries[arch->counter - 1];
+		const auto& cur_entry = hArcData->disks[hArcData->disc_counter].
+			arc_dir_entries[hArcData->disks[hArcData->disc_counter].counter - 1];
 		set_file_datetime(hUnpFile, cur_entry.FileTime);
 		close_file(hUnpFile);
 		set_file_attributes_ex(dest, cur_entry.FileAttr);
