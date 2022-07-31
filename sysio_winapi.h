@@ -25,6 +25,7 @@ bool set_file_datetime(file_handle_t handle, uint32_t file_datetime);
 bool set_file_attributes(const char* filename, uint32_t attribute);
 size_t get_file_size(const char* filename);
 size_t get_file_size(file_handle_t handle);
+inline char get_path_separator() { return '\\'; }
 
 #endif 
 

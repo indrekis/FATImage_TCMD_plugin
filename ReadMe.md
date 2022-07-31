@@ -35,6 +35,8 @@ As usual for the TCmd plugins:
 * Using automated install:
 	1. Open the archive with the plugin in TCmd -- it would propose to install the plugin. 
 
+Configuration is stored in the `fatdiskimg.ini` file in the configuration path provided by the TCmd (usually -- the same place, where wincmd.ini is located). If the configuration file is damaged or absent, it is recreated with default values.
+
 Works in Double Commander for Windows.
 
 Binary releases available [here](https://github.com/indrekis/FDDImage_TCMD_plugin/releases).

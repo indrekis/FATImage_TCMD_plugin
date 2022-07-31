@@ -17,6 +17,7 @@
 #include "sysui_winapi.h"
 #include "minimal_fixed_string.h"
 #include "FAT_definitions.h"
+#include "plugin_config.h"
 
 #include "wcxhead.h"
 #include <new>
@@ -24,6 +25,8 @@
 #include <cstddef>
 #include <vector>
 #include <algorithm>
+#include <optional>
+#include <map>
 #include <cassert>
 using std::nothrow, std::uint8_t;
 
@@ -68,19 +71,9 @@ struct arc_dir_entry_t
 	uint32_t FirstClus;
 };
 
-struct plugin_config_t {
-	bool ignore_boot_signature = false;
-	bool use_VFAT = true;
-	bool process_DOS1xx_images = true;
-	bool process_MBR = true;
-	bool process_DOS1xx_exceptions = true; // Highly specialized exceptions for the popular images found in the Inet
-	bool search_for_boot_sector = true;	   // WinImage-like behavior -- if boot is not on the beginning of the file,
-										   // search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA
-	size_t search_for_boot_sector_range = 64 * 1024;
+plugin_config_t plugin_config; 
 
-};
-
-struct archive_t
+struct FAT_image_t
 {
 	enum FAT_types { unknow_type, FAT12_type, FAT16_type, FAT32_type, exFAT_type, FAT_DOS100_type, FAT_DOS110_type};
 
@@ -109,18 +102,16 @@ struct archive_t
 	tChangeVolProc   pLocChangeVol = nullptr;
 	tProcessDataProc pLocProcessData = nullptr;
 
-	plugin_config_t plugin_config;
+	FAT_image_t(const FAT_image_t&) = delete;
+	FAT_image_t& operator=(const FAT_image_t&) = delete;
 
-	archive_t(const archive_t&) = delete;
-	archive_t& operator=(const archive_t&) = delete;
-
-	archive_t(on_bad_BPB_callback_t clb, const char* arcnm, file_handle_t fh, int openmode) :
+	FAT_image_t(on_bad_BPB_callback_t clb, const char* arcnm, file_handle_t fh, int openmode) :
 		archname(arcnm), on_bad_BPB_callback(clb), openmode_m(openmode), hArchFile(fh)
 	{
 		archive_file_size = get_file_size(archname.data());
 	}
 
-	~archive_t() {
+	~FAT_image_t() {
 		if (hArchFile)
 			close_file(hArchFile);
 	}
@@ -225,7 +216,7 @@ struct archive_t
 };
 
 struct whole_disk_t {
-	std::vector<archive_t>	disks;
+	std::vector<FAT_image_t>	disks;
 	std::vector<MBR_t>		mbrs{ 1 };
 
 	int detect_MBR();
@@ -234,7 +225,7 @@ struct whole_disk_t {
 
 //------- archive_t implementation -----------------------------
 
-int archive_t::process_bootsector(bool read_bootsec) {
+int FAT_image_t::process_bootsector(bool read_bootsec) {
 	if(read_bootsec){
 		set_file_pointer(hArchFile, boot_sector_offset);
 		auto result = read_file(hArchFile, &bootsec, sector_size);
@@ -344,7 +335,7 @@ static uint8_t raw_DOS200_bootsector[] = {
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x55, 0xAA
 	};
 
-int archive_t::process_DOS1xx_image() {
+int FAT_image_t::process_DOS1xx_image() {
 	//! DOS 1.xx disks do not contain BPB so any detection would be a heuristic. 
 	//! But the limited number of image types helps a little
 	//! So we test media byte and image size. If it looks OK -- recreate BPB and 
@@ -444,7 +435,7 @@ int archive_t::process_DOS1xx_image() {
 	return process_bootsector(false);
 }
 
-int archive_t::load_FAT() {
+int FAT_image_t::load_FAT() {
 	const size_t fat_size_bytes = get_bytes_per_FAT();
 	try {
 		fattable.reserve(fat_size_bytes); // To minimize overcommit
@@ -463,7 +454,7 @@ int archive_t::load_FAT() {
 	return 0;
 }
 
-uint64_t archive_t::get_total_sectors_in_volume() const {
+uint64_t FAT_image_t::get_total_sectors_in_volume() const {
 	uint64_t sectors = 0;
 	if (bootsec.BPB_TotSec16 != 0) {
 		sectors = bootsec.BPB_TotSec16;
@@ -482,57 +473,57 @@ uint64_t archive_t::get_total_sectors_in_volume() const {
 	return sectors;
 }
 
-uint64_t archive_t::get_data_sectors_in_volume() const {
+uint64_t FAT_image_t::get_data_sectors_in_volume() const {
 	return get_total_sectors_in_volume() - get_data_area_offset() / bootsec.BPB_bytesPerSec;
 }
 
-uint64_t archive_t::get_data_clusters_in_volume() const {
+uint64_t FAT_image_t::get_data_clusters_in_volume() const {
 	return get_data_sectors_in_volume() / bootsec.BPB_SecPerClus;
 }
 
-archive_t::FAT_types archive_t::detect_FAT_type() const {
+FAT_image_t::FAT_types FAT_image_t::detect_FAT_type() const {
 // See http://jdebp.info/FGA/determining-fat-widths.html
 	auto sectors = bootsec.BPB_bytesPerSec;
 	if(sectors == 0){
-		return archive_t::exFAT_type;
+		return FAT_image_t::exFAT_type;
 	}
 	auto clusters = get_data_clusters_in_volume();
 	if (strncmp(bootsec.EBPB_FAT.BS_FilSysType, "FAT12   ", 8) == 0) {
 		if (clusters > 0x0FF6) {
 			// TODO: inconsistent 
-			return archive_t::unknow_type;
+			return FAT_image_t::unknow_type;
 		}
-		return archive_t::FAT12_type;
+		return FAT_image_t::FAT12_type;
 	}
 	if (strncmp(bootsec.EBPB_FAT.BS_FilSysType, "FAT16   ", 8) == 0) {
 		if (clusters > 0x0FFF6) {
 			// TODO: inconsistent
-			return archive_t::unknow_type;
+			return FAT_image_t::unknow_type;
 		}
-		return archive_t::FAT16_type;
+		return FAT_image_t::FAT16_type;
 	}
 	if (strncmp(bootsec.EBPB_FAT.BS_FilSysType, "FAT32   ", 8) == 0 || // Could contain it
 		strncmp(bootsec.EBPB_FAT32.BS_FilSysType, "FAT32   ", 8) == 0
 		) {
-		return archive_t::FAT32_type;
+		return FAT_image_t::FAT32_type;
 	}
 
 	if (clusters >= 0x00000002 && clusters <= 0x00000FF6) { // 2–4086
-		return archive_t::FAT12_type;
+		return FAT_image_t::FAT12_type;
 	} 
 
 	//! TODO: Possible small FAT32 discs without BS_FilSysType could be misdetected.
 	if (clusters >= 0x00000FF7 && clusters <= 0x0000FFF6) { // 4087–65526
-		return archive_t::FAT16_type;
+		return FAT_image_t::FAT16_type;
 	}
 
 	if (clusters >= 0x0000FFF7 && clusters <= 0x0FFFFFF6) { // 65527–268435446
-		return archive_t::FAT32_type;
+		return FAT_image_t::FAT32_type;
 	}
-	return archive_t::unknow_type; // Unknown format
+	return FAT_image_t::unknow_type; // Unknown format
 }
 
-int archive_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
+int FAT_image_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 	try { // For bad allocation
 		const auto& cur_entry = arc_dir_entries[idx];
 		uint32_t nextclus = cur_entry.FirstClus;
@@ -572,7 +563,7 @@ int archive_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 }
 
 // root passed by copy to avoid problems while relocating vector
-int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root, uint32_t firstclus, uint32_t depth) //-V813
+int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root, uint32_t firstclus, uint32_t depth) //-V813
 {
 	if (root.is_empty()) { // Initial reading
 		counter = 0;
@@ -717,7 +708,7 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 	return 0;
 }
 
-uint32_t archive_t::get_first_cluster(const FATxx_dir_entry_t& dir_entry) const {
+uint32_t FAT_image_t::get_first_cluster(const FATxx_dir_entry_t& dir_entry) const {
 	switch (FAT_type) {
 	case FAT12_type:
 		return dir_entry.get_first_cluster_FAT12();
@@ -733,7 +724,7 @@ uint32_t archive_t::get_first_cluster(const FATxx_dir_entry_t& dir_entry) const 
 	}
 }
 
-uint32_t archive_t::next_cluster_FAT12(uint32_t firstclus) const
+uint32_t FAT_image_t::next_cluster_FAT12(uint32_t firstclus) const
 {
 	const auto FAT_byte_pre = fattable.data() + ((firstclus * 3) >> 1); // firstclus + firstclus/2 //-V104
 	//! Extract word, containing next cluster:
@@ -742,21 +733,21 @@ uint32_t archive_t::next_cluster_FAT12(uint32_t firstclus) const
 	return ((*word_ptr) >> ((firstclus % 2) ? 4 : 0)) & 0x0FFF; //-V112
 }
 
-uint32_t archive_t::next_cluster_FAT16(uint32_t firstclus) const
+uint32_t FAT_image_t::next_cluster_FAT16(uint32_t firstclus) const
 {
 	const auto FAT_byte_pre = fattable.data() + static_cast<size_t>(firstclus) * 2; 
 	const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
 	return *word_ptr;
 }
 
-uint32_t archive_t::next_cluster_FAT32(uint32_t firstclus) const
+uint32_t FAT_image_t::next_cluster_FAT32(uint32_t firstclus) const
 {
 	const auto FAT_byte_pre = fattable.data() + static_cast<size_t>(firstclus) * 4; //-V112
 	const uint32_t* word_ptr = reinterpret_cast<const uint32_t*>(FAT_byte_pre); //-V206
 	return (*word_ptr) & 0x0F'FF'FF'FF; // Zero upper 4 bits
 }
 
-uint32_t archive_t::next_cluster_FAT(uint32_t firstclus) const
+uint32_t FAT_image_t::next_cluster_FAT(uint32_t firstclus) const
 {
 	// TODO: Replace by function pointer
 	switch (FAT_type) {
@@ -779,7 +770,7 @@ uint32_t archive_t::next_cluster_FAT(uint32_t firstclus) const
 //! treated as a normal value. 
 //! DOS 3.3+ treats 0xFF0 for FAT12 (but not FAT16 and FAT32) as a end-of-chain.
 //! See also max_normal_cluster_FAT().
-uint32_t archive_t::max_cluster_FAT() const
+uint32_t FAT_image_t::max_cluster_FAT() const
 {
 	// TODO: Replace by array
 	switch (FAT_type) {
@@ -797,7 +788,7 @@ uint32_t archive_t::max_cluster_FAT() const
 	}
 }
 
-uint32_t archive_t::max_normal_cluster_FAT() const
+uint32_t FAT_image_t::max_normal_cluster_FAT() const
 {
 	// TODO: Replace by array
 	switch (FAT_type) {
@@ -815,7 +806,7 @@ uint32_t archive_t::max_normal_cluster_FAT() const
 	}
 }
 
-uint32_t archive_t::min_end_of_chain_FAT() const
+uint32_t FAT_image_t::min_end_of_chain_FAT() const
 {
 	switch (FAT_type) {
 	case FAT12_type:
@@ -832,12 +823,12 @@ uint32_t archive_t::min_end_of_chain_FAT() const
 	}
 }
 
-bool archive_t::is_end_of_chain_FAT(uint32_t cluster) const 
+bool FAT_image_t::is_end_of_chain_FAT(uint32_t cluster) const 
 {
 	return cluster >= min_end_of_chain_FAT();
 }
 
-int archive_t::search_for_bootsector() {
+int FAT_image_t::search_for_bootsector() {
 	// Search is unaligned to sectors its main intent is to skip metainfo added by some imaging tools
 	std::unique_ptr<uint8_t[]> buffer{ new(nothrow) uint8_t[plugin_config.search_for_boot_sector_range] };
 	if (buffer == nullptr) {
@@ -867,7 +858,7 @@ int archive_t::search_for_bootsector() {
 	return E_UNKNOWN_FORMAT;
 }
 
-using archive_HANDLE = archive_t*;
+using archive_HANDLE = FAT_image_t*;
 
 //------- whole_disk_t implementation --------------------------
 int whole_disk_t::detect_MBR() {
@@ -895,7 +886,7 @@ extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
-		std::unique_ptr<archive_t> arch; // TCmd API expects HANDLE/raw pointer,
+		std::unique_ptr<FAT_image_t> arch; // TCmd API expects HANDLE/raw pointer,
 										// so smart pointer is used to manage cleanup on errors 
 										// only inside this function
 		//! Not used by TCmd yet.
@@ -911,7 +902,7 @@ extern "C" {
 			return nullptr;
 		}
 		try {
-			arch = std::make_unique<archive_t>(winAPI_msgbox_on_bad_BPB, ArchiveData->ArcName,
+			arch = std::make_unique<FAT_image_t>(winAPI_msgbox_on_bad_BPB, ArchiveData->ArcName,
 				hArchFile, ArchiveData->OpenMode);
 		}
 		catch (std::bad_alloc&) {
@@ -922,12 +913,12 @@ extern "C" {
 		auto err_code = arch->process_bootsector(true);
 
 		if (err_code != 0) {
-			if (arch->plugin_config.process_DOS1xx_images) {
+			if (plugin_config.process_DOS1xx_images) {
 				err_code = arch->process_DOS1xx_image();
 			}
 		}
 		if (err_code != 0) {
-			if (arch->plugin_config.process_MBR) {
+			if (plugin_config.process_MBR) {
 				// Reread boot here! 
 				// err_code = detect_MBR();
 				err_code = E_UNKNOWN_FORMAT;
@@ -988,7 +979,7 @@ extern "C" {
 	// ProcessFile should unpack the specified file or test the integrity of the archive
 	DLLEXPORT int STDCALL ProcessFile(archive_HANDLE hArcData, int Operation, char* DestPath, char* DestName) //-V2009
 	{
-		archive_t* arch = hArcData;
+		FAT_image_t* arch = hArcData;
 		char dest[MAX_PATH] = "";
 		file_handle_t hUnpFile;
 
@@ -1051,5 +1042,15 @@ extern "C" {
 	DLLEXPORT void STDCALL SetProcessDataProc(archive_HANDLE hArcData, tProcessDataProc pProcessDataProc)
 	{
 		hArcData->pLocProcessData = pProcessDataProc;
+	}
+
+	// PackSetDefaultParams is called immediately after loading the DLL, before any other function. 
+	// This function is new in version 2.1. 
+	// It requires Total Commander >=5.51, but is ignored by older versions.
+	DLLEXPORT void STDCALL PackSetDefaultParams(PackDefaultParamStruct* dps) { //-V2009
+		auto res = plugin_config.read_conf(dps);
+		if (!res) { // Create default configuration if conf file is absent
+			plugin_config.write_conf();
+		}
 	}
 }
