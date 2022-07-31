@@ -277,7 +277,7 @@ struct FATxx_dir_entry_t
 
 	//! Returns number of invalid chars
 	template<typename T>
-	uint32_t dir_entry_name_to_str(T& name);
+	uint32_t dir_entry_name_to_str(T& name, bool process_OS2_EA_file = true);
 
 	uint32_t get_first_cluster_FAT12() const {
 		return DIR_FstClusLO;
@@ -300,30 +300,46 @@ struct FATxx_dir_entry_t
 		return !((mychar >= '\x00') && (mychar <= '\x20')) &&
 			strchr(non_valid_chars, mychar) == nullptr;
 	}
+
+	static constexpr char OS2_EA_file_entry[] = "EA DATA  SF";
+	static constexpr char OS2_EA_file_name[] = "EA DATA. SF";
+	static_assert(sizeof(OS2_EA_file_entry) == 11 + 1, "Wrong OS2_EA_file size");
+	static_assert(sizeof(OS2_EA_file_name) == 11 + 1, "Wrong OS2_EA_file_name size");
+	enum ll_dir_entry_props{ LLDE_OK = 0, LLDE_badinname = 1, LLDE_badinext = 2, LLDE_OS2_EA = 0xFFFF};
 };
 
 template<typename T>
-uint32_t FATxx_dir_entry_t::dir_entry_name_to_str(T& name) {
+uint32_t FATxx_dir_entry_t::dir_entry_name_to_str(T& name, bool process_OS2_EA_file) {
+	// 0x05 is used as a placeholder for the symbol 0xE5 (used as deleted marker)
+	// TODO: Implement processing it -- replacing 0x05 to 0xE5 in output
 	// if (DIR_Name[0] == char(0x05)) FileName[i++] = char(0xE5); // because 0xE5 used in Japan
+	// See also https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#DIR_OFS_00h
 	uint32_t invalid = 0;
 
-	for (int i = 0; i < 8; ++i) {
-		if (!is_valid_char(DIR_Name[i])) {
-			if (DIR_Name[i] != ' ') ++invalid;
-			break;
-		}
-		name.push_back(DIR_Name[i]);
+	auto ea_os2_found = memcmp(&DIR_Name[0], OS2_EA_file_entry, 11);
+	if (ea_os2_found == 0) {
+		name.push_back(OS2_EA_file_name);
+		return LLDE_OS2_EA;
 	}
-	if (is_valid_char(DIR_Name[8]))
-	{
-		name.push_back('.');
-	}
-	for (int i = 8; i < 8 + 3; ++i) {
-		if (!is_valid_char(DIR_Name[i])) {
-			if (DIR_Name[i] != ' ') ++invalid;
-			break;
+	else {
+		for (int i = 0; i < 8; ++i) {
+			if (!is_valid_char(DIR_Name[i])) {
+				if (DIR_Name[i] != ' ') ++invalid;
+				break;
+			}
+			name.push_back(DIR_Name[i]);
 		}
-		name.push_back(DIR_Name[i]);
+		if (is_valid_char(DIR_Name[8]))
+		{
+			name.push_back('.');
+		}
+		for (int i = 8; i < 8 + 3; ++i) {
+			if (!is_valid_char(DIR_Name[i])) {
+				if (DIR_Name[i] != ' ') ++invalid;
+				break;
+			}
+			name.push_back(DIR_Name[i]);
+		}
 	}
 	return invalid;
 }
@@ -480,6 +496,13 @@ static_assert(sizeof(MBR_t) == 512, "Wrong size of MBR_t");
 // 2. http://ucsd-psystem-fs.sourceforge.net/ http://ucsd-psystem-fs.sourceforge.net/ucsd-psystem-fs-1.22.pdf 
 // 3. CP/M FS formats: https://www.seasip.info/Cpm/formats.html
 // 4. 86-DOS FAT variants: https://en.wikipedia.org/wiki/86-DOS#Formats
+// 5. UMSDOS: --LINUX-.--- files format: https://gist.github.com/chungy/7852622, http://linux.voyager.hr/umsdos/
+// 6. OS/2 Extended attributes for FAT: http://www.tavi.co.uk/os2pages/eadata.html -- some info about EA on-disk format, 
+//	  API details:
+//	  http://www.naspa.net/magazine/1996/July/T9607014.PDF , 
+//	  http://www.edm2.com/index.php/Extended_Attributes_-_what_are_they_and_how_can_you_use_them_%3F
+//    http://www.edm2.com/index.php/Encapsulating_Extended_Attributes_-_Part_1/2
+//    http://www.edm2.com/index.php/Encapsulating_Extended_Attributes_-_Part_2/2
 // 
 // See also https://github.com/aaru-dps/Aaru -- Aaru Data Preservation Suite
 #endif 

@@ -94,6 +94,7 @@ struct archive_t
 	size_t boot_sector_offset = 0;
 
 	FAT_types FAT_type = unknow_type;
+	bool has_OS2_EA = false;
 
 	std::vector<uint8_t> fattable;
 	std::vector<arc_dir_entry_t> arc_dir_entries;
@@ -668,11 +669,15 @@ int archive_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root,
 				}
 				else {
 					auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
+					// No OS/2 EA on FAT32
 				}
 				current_LFN.abort_processing();
 			}
 			else {
 				auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
+				if (invalid_chars == FATxx_dir_entry_t::LLDE_OS2_EA) {
+					has_OS2_EA = true;
+				}
 			}
 
 			newentryref.FileTime = sector[entry_in_cluster].get_file_datetime();
