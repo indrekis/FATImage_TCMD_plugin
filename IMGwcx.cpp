@@ -1044,13 +1044,14 @@ extern "C" {
 				err_code = arch->disks[0].process_DOS1xx_image();
 			}
 		}
+		int first_err_code = 0;
 		if (err_code != 0) {
 			if (plugin_config.process_MBR) {
 				err_code = arch->process_MBR();
 				if (!err_code) {
 					// Single partition -- treat as a non-partitioned disk for viewing
 					arch->disks[0].set_boot_sector_offset(arch->partition_info[0].first_sector * arch->sector_size);
-					auto first_err_code = arch->disks[0].process_bootsector(true);
+					first_err_code = arch->disks[0].process_bootsector(true);
 					for (size_t i = 1; i < arch->partition_info.size(); ++i) {
 						// Looks like push and then pop wrong would be more efficient now -- before move operations are implemented
 						arch->disks.push_back(arch->disks[0]);
@@ -1061,11 +1062,7 @@ extern "C" {
 							arch->disks.pop_back();
 						}
 					}
-					if (first_err_code) {
-						// First partition is not known
-						arch->disks.erase(arch->disks.begin());
-					}
-					if (arch->disks.empty()) {
+					if (arch->disks.empty() || (first_err_code != 0 && arch->disks.size() == 1) ) {
 						err_code = E_UNKNOWN_FORMAT;
 					}
 					else {
@@ -1077,11 +1074,18 @@ extern "C" {
 				}
 			}
 		}
+
+		if (err_code == 0 && first_err_code) {
+			// We have some partitions but first partition is not known
+			arch->disks.erase(arch->disks.begin());
+		}
+		// No partitions -- attempt to find boot sector
 		if (err_code != 0) {
 			if (arch->disks[0].search_for_bootsector() == 0) {
 				err_code = arch->disks[0].process_bootsector(true);
 			}
 		}
+
 		if (err_code != 0) {
 			ArchiveData->OpenResult = err_code;
 			return nullptr;
