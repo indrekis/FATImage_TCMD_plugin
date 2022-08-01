@@ -108,8 +108,7 @@ struct FAT_image_t
 	}
 
 	~FAT_image_t() {
-		if (hArchFile)
-			close_file(hArchFile);
+		// File is closed by the MBR archive -- whole_disk_t
 	}
 
 	void set_boot_sector_offset(size_t off) {
@@ -246,6 +245,11 @@ struct whole_disk_t {
 
 	int detect_MBR();
 	int process_MBR();
+
+	~whole_disk_t() {
+		if (hArchFile)
+			close_file(hArchFile);
+	}
 };
 
 //------- archive_t implementation -----------------------------
@@ -957,18 +961,6 @@ int whole_disk_t::process_MBR() {
 						break;
 					}
 					partition_info_t curp_ext;
-					if (mbrs.back().ptable[i].is_LBAs_zero()) {
-#ifdef _WIN32
-							MessageBoxEx(
-								NULL,
-								TEXT("CHS-based extended partition volume, skipping"),
-								TEXT("MBR error"),
-								MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1,
-								0
-							);
-#endif 
-						continue;
-					}
 					// Starting sector for extended boot record (EBR) is a relative offset between this 
 					// EBR sector and the first sector of the logical partition
 					curp_ext.first_sector = curp.first_sector
@@ -1038,20 +1030,21 @@ extern "C" {
 			if (plugin_config.process_MBR) {
 				err_code = arch->process_MBR();
 				if (!err_code) {
-					if (arch->partition_info.size() == 1) {
-						// Single partition -- treat as a non-partitioned disk for viewing
-						arch->disks[0].set_boot_sector_offset(arch->partition_info[0].first_sector * arch->sector_size);
-						err_code = arch->disks[0].process_bootsector(true);
+					// Single partition -- treat as a non-partitioned disk for viewing
+					arch->disks[0].set_boot_sector_offset(arch->partition_info[0].first_sector * arch->sector_size);
+					err_code = arch->disks[0].process_bootsector(true); // TODO: case if first partition is unknown
+					for (size_t i = 1; i < arch->partition_info.size(); ++i) {
+						// Looks like push and then pop wrong would be more efficient now -- before move operations are implemented
+						arch->disks.push_back(arch->disks[0]);
+						arch->disks[i].set_boot_sector_offset(arch->partition_info[i].first_sector * arch->sector_size);
+						err_code = arch->disks[i].process_bootsector(true);
+						if (err_code) {
+							// Unknown partition
+							arch->disks.pop_back();
+						}
 					}
 				}
 				else {
-					MessageBoxEx(
-						NULL,
-						TEXT("Temp"),
-						TEXT("MBR error"),
-						MB_ICONWARNING | MB_OKCANCEL | MB_DEFBUTTON1,
-						0
-					);
 					err_code = E_UNKNOWN_FORMAT;
 				}
 			}
