@@ -28,6 +28,7 @@
 #include <optional>
 #include <map>
 #include <cassert>
+
 using std::nothrow, std::uint8_t;
 
 #ifdef _WIN32
@@ -243,7 +244,7 @@ struct whole_disk_t {
 	std::vector<FAT_image_t>		disks;
 	std::vector<MBR_t>				mbrs{ 1 };
 	std::vector<partition_info_t>	partition_info;
-	size_t disc_counter = 0;
+	uint32_t disc_counter = 0;
 
 	int detect_MBR();
 	int process_MBR();
@@ -930,7 +931,7 @@ int whole_disk_t::process_MBR() {
 		return res;
 	int extended_partition_idx = -1;
 	for (int i = 0; i < mbrs[0].ptables(); ++i) {
-		if (mbrs[0].ptable[i].is_total_zero())
+		if (mbrs[0].ptable[i].is_total_zero()) //-V807
 			break;
 		if (mbrs[0].ptable[i].is_LBAs_zero()) {
 #ifdef _WIN32
@@ -963,7 +964,7 @@ int whole_disk_t::process_MBR() {
 					extended_partition_idx = i;
 				}
 				while (true) {
-					set_file_pointer(hArchFile, curp.first_sector * sector_size);
+					set_file_pointer(hArchFile, curp.first_sector * sector_size); //-V104
 					mbrs.push_back({});
 					auto result = read_file(hArchFile, &mbrs.back(), sector_size);
 					if (result != sector_size) {
@@ -1124,13 +1125,14 @@ extern "C" {
 	// TCmd calls ReadHeader to find out what files are in the archive
 	DLLEXPORT int STDCALL ReadHeader(archive_HANDLE hArcData, tHeaderData* HeaderData)
 	{
-		if (hArcData->disks[hArcData->disc_counter].counter ==				  //-V104
-			hArcData->disks[hArcData->disc_counter].arc_dir_entries.size() ||
-			hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty()			
+		auto& prev_current_disk = hArcData->disks[hArcData->disc_counter]; // Optimization
+		if (prev_current_disk.counter ==				  //-V104
+			prev_current_disk.arc_dir_entries.size() ||
+			prev_current_disk.arc_dir_entries.empty()
 			) { //-V104
-			hArcData->disks[hArcData->disc_counter].counter = 0;
+			prev_current_disk.counter = 0;
 			++hArcData->disc_counter;
-			if (hArcData->disc_counter == hArcData->disks.size()) {
+			if (hArcData->disc_counter == hArcData->disks.size()) { //-V104
 				hArcData->disc_counter = 0;
 				return E_END_ARCHIVE;
 			}
