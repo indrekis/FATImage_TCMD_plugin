@@ -107,9 +107,8 @@ struct FAT_image_t
 	{		
 	}
 
-	~FAT_image_t() {
-		// File is closed by the MBR archive -- whole_disk_t
-	}
+	// File is closed by the MBR archive -- whole_disk_t
+	~FAT_image_t() = default; 
 
 	void set_boot_sector_offset(size_t off) {
 		boot_sector_offset = off;
@@ -238,6 +237,9 @@ struct whole_disk_t {
 		disks.emplace_back(clb, vol_size, fh, openmode);
 	}
 
+	// Note that disks, partition_info, mbrs are not synchronized. 
+	// disks contains only known (FAT) volumes, partition_info -- only volumes (no extended partitions)
+	// and mbrs -- MBR and all EBRs.
 	std::vector<FAT_image_t>		disks;
 	std::vector<MBR_t>				mbrs{ 1 };
 	std::vector<partition_info_t>	partition_info;
@@ -245,6 +247,22 @@ struct whole_disk_t {
 
 	int detect_MBR();
 	int process_MBR();
+
+	static minimal_fixed_string_t<MAX_PATH> get_disk_prefix(uint32_t idx) { 
+		minimal_fixed_string_t<MAX_PATH> res{ "C\\" };
+		if (idx > 'Z' - 'C') { // Quick and dirty
+			res[1] = 'P';
+			while (idx != 0) {
+				res.push_back( static_cast<char>(idx % 10 + '0') );
+				idx /= 10;
+			}
+			res.push_back('\\');
+		}
+		else {
+			res[0] += idx;
+		}
+		return res; 
+	}
 
 	~whole_disk_t() {
 		if (hArchFile)
@@ -1032,7 +1050,7 @@ extern "C" {
 				if (!err_code) {
 					// Single partition -- treat as a non-partitioned disk for viewing
 					arch->disks[0].set_boot_sector_offset(arch->partition_info[0].first_sector * arch->sector_size);
-					err_code = arch->disks[0].process_bootsector(true); // TODO: case if first partition is unknown
+					auto first_err_code = arch->disks[0].process_bootsector(true);
 					for (size_t i = 1; i < arch->partition_info.size(); ++i) {
 						// Looks like push and then pop wrong would be more efficient now -- before move operations are implemented
 						arch->disks.push_back(arch->disks[0]);
@@ -1042,6 +1060,16 @@ extern "C" {
 							// Unknown partition
 							arch->disks.pop_back();
 						}
+					}
+					if (first_err_code) {
+						// First partition is not known
+						arch->disks.erase(arch->disks.begin());
+					}
+					if (arch->disks.empty()) {
+						err_code = E_UNKNOWN_FORMAT;
+					}
+					else {
+						err_code = 0;
 					}
 				}
 				else {
@@ -1059,38 +1087,77 @@ extern "C" {
 			return nullptr;
 		}
 
-		err_code = arch->disks[0].load_FAT();
-		if (err_code != 0) {
-			ArchiveData->OpenResult = err_code;
-			return nullptr;
+		int loaded_FATs = 0;
+		size_t loaded_catalogs = 0;
+		while( loaded_catalogs < arch->disks.size() ) {
+			err_code = arch->disks[loaded_catalogs].load_FAT();
+			if (err_code != 0 && loaded_FATs == 0) { // Saving the first error
+				ArchiveData->OpenResult = err_code;
+				arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
+			}
+			else {
+				++loaded_FATs;
+				err_code = arch->disks[loaded_catalogs].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
+				if (err_code != 0 && loaded_catalogs == 0) { // Saving the first error
+					ArchiveData->OpenResult = err_code;
+					arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
+				} 
+				else {
+					++loaded_catalogs;
+				}
+			}
 		}
 
-		err_code = arch->disks[0].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
-		if (err_code != 0) {
-			ArchiveData->OpenResult = err_code;
+		if (loaded_catalogs > 0) {
+			ArchiveData->OpenResult = 0; // OK
+			return arch.release(); // Returns raw ptr and releases ownership 
+		}
+		else {
 			return nullptr;
 		}
-
-		ArchiveData->OpenResult = 0; // OK
-		return arch.release(); // Returns raw ptr and releases ownership 
 	}
 
 	// TCmd calls ReadHeader to find out what files are in the archive
 	DLLEXPORT int STDCALL ReadHeader(archive_HANDLE hArcData, tHeaderData* HeaderData)
 	{
 		if (hArcData->disks[hArcData->disc_counter].counter ==				  //-V104
-			hArcData->disks[hArcData->disc_counter].arc_dir_entries.size()) { //-V104
-			// TODO: Add walk throug all disks (partitions)
+			hArcData->disks[hArcData->disc_counter].arc_dir_entries.size() ||
+			hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty()			
+			) { //-V104
 			hArcData->disks[hArcData->disc_counter].counter = 0;
-			return E_END_ARCHIVE;
+			++hArcData->disc_counter;
+			if (hArcData->disc_counter == hArcData->disks.size()) {
+				hArcData->disc_counter = 0;
+				return E_END_ARCHIVE;
+			}
+
 		}
+		// get_disk_prefix
 		auto& current_disk = hArcData->disks[hArcData->disc_counter];
 		strcpy(HeaderData->ArcName, hArcData->archname.data());
-		strcpy(HeaderData->FileName, current_disk.arc_dir_entries[current_disk.counter].PathName.data());
-		HeaderData->FileAttr = current_disk.arc_dir_entries[current_disk.counter].FileAttr;
-		HeaderData->FileTime = current_disk.arc_dir_entries[current_disk.counter].FileTime;
-		// For files larger than 2Gb -- implement tHeaderDataEx
-		HeaderData->PackSize = static_cast<int>(current_disk.arc_dir_entries[current_disk.counter].FileSize);
+		if (hArcData->disks.size() == 1) {
+			strcpy(HeaderData->FileName, current_disk.arc_dir_entries[current_disk.counter].PathName.data());
+		}
+		else {
+			auto res = hArcData->get_disk_prefix(hArcData->disc_counter);
+			// TODO: Implement push_back for minimal_fixed_string
+			//! If disk empty -- put only dir with its name
+			if( !hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty() )
+				res.push_back(current_disk.arc_dir_entries[current_disk.counter].PathName.data());
+			strcpy(HeaderData->FileName, res.data());
+
+		}
+		if (!hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty()) {
+			HeaderData->FileAttr = current_disk.arc_dir_entries[current_disk.counter].FileAttr;
+			HeaderData->FileTime = current_disk.arc_dir_entries[current_disk.counter].FileTime;
+			// For files larger than 2Gb -- implement tHeaderDataEx
+			HeaderData->PackSize = static_cast<int>(current_disk.arc_dir_entries[current_disk.counter].FileSize);
+		}
+		else { // Just disk dir
+			HeaderData->FileAttr = 0;  // TODO: use current time
+			HeaderData->FileTime = 0;
+			HeaderData->PackSize = 0;
+		}
 		HeaderData->UnpSize = HeaderData->PackSize;
 		HeaderData->CmtBuf = 0;
 		HeaderData->CmtBufSize = 0;
