@@ -78,7 +78,7 @@ struct arc_dir_entry_t
 
 plugin_config_t plugin_config; 
 
-using on_bad_BPB_callback_t = int(*)(void*, int openmode);
+using on_bad_BPB_callback_t = int(*)(void*);
 
 struct FAT_image_t
 {
@@ -88,7 +88,7 @@ struct FAT_image_t
 	on_bad_BPB_callback_t on_bad_BPB_callback = nullptr;
 	int openmode_m = PK_OM_LIST;
 	file_handle_t hArchFile = file_handle_t();    //opened file handle
-	size_t archive_file_size = 0;	// TODO: rename to volume_size
+	size_t image_file_size    = 0;	
 	size_t boot_sector_offset = 0;
 
 	FAT_types FAT_type = unknow_type;
@@ -108,7 +108,7 @@ struct FAT_image_t
 	FAT_image_t& operator=(const FAT_image_t&) = default;
 
 	FAT_image_t(on_bad_BPB_callback_t clb, size_t vol_size, file_handle_t fh, int openmode) :
-		archive_file_size(vol_size), on_bad_BPB_callback(clb), openmode_m(openmode), hArchFile(fh)
+		image_file_size(vol_size), on_bad_BPB_callback(clb), openmode_m(openmode), hArchFile(fh)
 	{		
 	}
 
@@ -288,14 +288,15 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 	// if read_bootsec == false -- user preread bootsector
 
 	if (bootsec.BPB_bytesPerSec != sector_size) {
-		// TODO: Some formats, like DMF, use other sizes
 		return E_UNKNOWN_FORMAT;
 	}
 
 	if (bootsec.signature != 0xAA55 && !plugin_config.ignore_boot_signature) {
-		int res = on_bad_BPB_callback(this, openmode_m);
-		if (res != 0) {
-			return res;
+		if (openmode_m == PK_OM_LIST) {
+			int res = on_bad_BPB_callback(this);
+			if (res != 0) {
+				return res;
+			}
 		}
 	}
 
@@ -416,7 +417,7 @@ int FAT_image_t::process_DOS1xx_image() {
 	memcpy_s(&bootsec, sector_size, raw_DOS200_bootsector, sizeof(raw_DOS200_bootsector));
 	switch (media_descr) {
 	case 0xFE: // 5.25" 160Kb/163'840b img; H:C:S = 1:40:8, DOS 1.00
-		if (archive_file_size != 160 * 1024) {
+		if (image_file_size != 160 * 1024) {
 			return E_UNKNOWN_FORMAT; 
 		}
 		bootsec.BPB_SecPerClus = 1;
@@ -430,7 +431,7 @@ int FAT_image_t::process_DOS1xx_image() {
 		// Hidden sectors = 0
 		break;
 	case 0xFC: // 5.25" 180Kb/184'320b img; H:C:S = 1:40:9, DOS 2.00
-		if (archive_file_size != 180 * 1024) {
+		if (image_file_size != 180 * 1024) {
 			return E_UNKNOWN_FORMAT;
 		}
 		bootsec.BPB_SecPerClus = 1;
@@ -444,9 +445,9 @@ int FAT_image_t::process_DOS1xx_image() {
 		// Hidden sectors = 0
 		break;
 	case 0xFF: // 5.25" 320Kb/327'680b img; H:C:S = 2:40:8, DOS 1.10
-		if (archive_file_size != 320 * 1024) {
+		if (image_file_size != 320 * 1024) {
 			if (plugin_config.process_DOS1xx_exceptions) {  // 331792
-				if (archive_file_size != 331'792) {
+				if (image_file_size != 331'792) {
 					//! Exception for the "MS-DOS 1.12.ver.1.12 OEM [Compaq]" image, containing 
 					//! 4112 bytes at the end, bracketed by "Skip  8 blocks " text.
 					return E_UNKNOWN_FORMAT;
@@ -468,7 +469,7 @@ int FAT_image_t::process_DOS1xx_image() {
 		// Hidden sectors = 0
 		break;
 	case 0xFD: // 5.25" 360Kb/368'640b img; H:C:S = 2:40:8, DOS 1.10
-		if (archive_file_size != 360 * 1024) {
+		if (image_file_size != 360 * 1024) {
 			return E_UNKNOWN_FORMAT;
 		}
 		bootsec.BPB_SecPerClus = 2;
@@ -704,7 +705,6 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 			arc_dir_entries.emplace_back();
 			auto& newentryref = arc_dir_entries.back();
 			newentryref.FileAttr = sector[entry_in_cluster].DIR_Attr;
-			// TODO: errors handling
 			newentryref.PathName.push_back(root); // Empty root is OK, "\\" OK too
 			if (plugin_config.use_VFAT && current_LFN.are_processing()) {
 				if (current_LFN.cur_LFN_CRC == VFAT_LFN_dir_entry_t::LFN_checksum(sector[entry_in_cluster].DIR_Name)) {
@@ -1026,7 +1026,7 @@ extern "C" {
 		ArchiveData->CmtSize = 0;
 		ArchiveData->CmtState = 0;
 
-		size_t archive_file_size = get_file_size(ArchiveData->ArcName);
+		size_t image_file_size = get_file_size(ArchiveData->ArcName);
 		auto hArchFile = open_file_shared_read(ArchiveData->ArcName);
 		if (hArchFile == file_open_error_v)
 		{
@@ -1034,7 +1034,7 @@ extern "C" {
 			return nullptr;
 		}
 		try {
-			arch = std::make_unique<whole_disk_t>(winAPI_msgbox_on_bad_BPB, ArchiveData->ArcName, archive_file_size,
+			arch = std::make_unique<whole_disk_t>(winAPI_msgbox_on_bad_BPB, ArchiveData->ArcName, image_file_size,
 				hArchFile, ArchiveData->OpenMode);
 		}
 		catch (std::bad_alloc&) {
@@ -1156,10 +1156,9 @@ extern "C" {
 		}
 		else {
 			auto res = hArcData->get_disk_prefix(hArcData->disc_counter);
-			// TODO: Implement push_back for minimal_fixed_string
 			//! If disk empty -- put only dir with its name
 			if( !hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty() )
-				res.push_back(current_disk.arc_dir_entries[current_disk.counter].PathName.data());
+				res.push_back(current_disk.arc_dir_entries[current_disk.counter].PathName);
 			strcpy(HeaderData->FileName, res.data());
 
 		}
@@ -1170,8 +1169,8 @@ extern "C" {
 			HeaderData->PackSize = static_cast<int>(current_disk.arc_dir_entries[current_disk.counter].FileSize);
 		}
 		else { // Just disk dir
-			HeaderData->FileAttr = 0;  // TODO: use current time
-			HeaderData->FileTime = 0;
+			HeaderData->FileAttr = FAT_attrib_t{ FAT_attrib_t::ATTR_DIRECTORY };  
+			HeaderData->FileTime = get_current_datetime();
 			HeaderData->PackSize = 0;
 		}
 		HeaderData->UnpSize = HeaderData->PackSize;

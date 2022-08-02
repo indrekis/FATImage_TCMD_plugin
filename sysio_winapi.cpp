@@ -124,3 +124,14 @@ size_t get_file_size(file_handle_t handle)
 
 	return size.QuadPart;
 }
+
+uint32_t get_current_datetime()
+{
+	SYSTEMTIME t = {0};
+	FILETIME   ft = { 0 };
+	uint16_t  dft[2] = { 0 };
+	GetSystemTime(&t);
+	SystemTimeToFileTime(&t, &ft);
+	FileTimeToDosDateTime(&ft, dft+1, dft);
+	return (static_cast<uint32_t>(dft[1]) << 16) + dft[0];
+}

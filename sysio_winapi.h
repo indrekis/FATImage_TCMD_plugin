@@ -27,6 +27,7 @@ size_t get_file_size(const char* filename);
 size_t get_file_size(file_handle_t handle);
 inline char get_path_separator() { return '\\'; }
 
+uint32_t get_current_datetime();
 #endif 
 
 
