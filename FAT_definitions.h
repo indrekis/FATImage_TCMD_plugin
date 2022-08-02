@@ -279,6 +279,8 @@ struct FATxx_dir_entry_t
 	template<typename T>
 	uint32_t dir_entry_name_to_str(T& name, bool process_OS2_EA_file = true);
 
+	bool process_E5();
+
 	uint32_t get_first_cluster_FAT12() const {
 		return DIR_FstClusLO;
 	}
@@ -308,12 +310,21 @@ struct FATxx_dir_entry_t
 	enum ll_dir_entry_props{ LLDE_OK = 0, LLDE_badinname = 1, LLDE_badinext = 2, LLDE_OS2_EA = 0xFFFF};
 };
 
+inline bool FATxx_dir_entry_t::process_E5() {
+	// 0x05 is used as a placeholder for the symbol 0xE5 (which is used as deleted marker)
+	// But it should be replaced after the test for deletion.
+	// See also https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#DIR_OFS_00h
+	if (DIR_Name[0] == '\x05') {
+		DIR_Name[0] = '\xE5';
+		return false;
+	}
+	else {
+		return true;
+	}
+}
+
 template<typename T>
 uint32_t FATxx_dir_entry_t::dir_entry_name_to_str(T& name, bool process_OS2_EA_file) {
-	// 0x05 is used as a placeholder for the symbol 0xE5 (used as deleted marker)
-	// TODO: Implement processing it -- replacing 0x05 to 0xE5 in output
-	// if (DIR_Name[0] == char(0x05)) FileName[i++] = char(0xE5); // because 0xE5 used in Japan
-	// See also https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#DIR_OFS_00h
 	uint32_t invalid = 0;
 
 	auto ea_os2_found = memcmp(&DIR_Name[0], OS2_EA_file_entry, 11);

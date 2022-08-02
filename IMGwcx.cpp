@@ -716,12 +716,14 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 					newentryref.PathName.push_back(current_LFN.cur_LFN_name);
 				}
 				else {
-					auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
+					auto res = sector[entry_in_cluster].process_E5(); // TODO: print to log about 0x05 occurence
+					auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);					
 					// No OS/2 EA on FAT32
 				}
 				current_LFN.abort_processing();
 			}
 			else {
+				auto res = sector[entry_in_cluster].process_E5(); // TODO: print to log about 0x05 occurence
 				auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
 				if (invalid_chars == FATxx_dir_entry_t::LLDE_OS2_EA) {
 					has_OS2_EA = true;
@@ -1267,7 +1269,7 @@ extern "C" {
 	}
 
 	// GetBackgroundFlags is called to determine whether a plugin supports background packing or unpacking.
-	// BACKGROUND_UNPACK        1 Calls to OpenArchive, ReadHeader(Ex), ProcessFile and CloseArchive are thread-safe 
+	// BACKGROUND_UNPACK == 1 Calls to OpenArchive, ReadHeader(Ex), ProcessFile and CloseArchive are thread-safe 
 	DLLEXPORT int STDCALL GetBackgroundFlags(PackDefaultParamStruct* dps) {
 		return BACKGROUND_UNPACK;
 	}
