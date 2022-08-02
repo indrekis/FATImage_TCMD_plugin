@@ -54,6 +54,7 @@ BOOL APIENTRY DllMain(HANDLE hModule,
 	return TRUE;
 }
 
+thread_local bool is_just_probing_archive = false;
 
 bool set_file_attributes_ex(const char* filename, FAT_attrib_t attribute) {
 	/*
@@ -1095,33 +1096,39 @@ extern "C" {
 			return nullptr;
 		}
 
-		int loaded_FATs = 0;
-		size_t loaded_catalogs = 0;
-		while( loaded_catalogs < arch->disks.size() ) {
-			err_code = arch->disks[loaded_catalogs].load_FAT();
-			if (err_code != 0 && loaded_FATs == 0) { // Saving the first error
-				ArchiveData->OpenResult = err_code;
-				arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
-			}
-			else {
-				++loaded_FATs;
-				err_code = arch->disks[loaded_catalogs].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
-				if (err_code != 0 && loaded_catalogs == 0) { // Saving the first error
+		if (!is_just_probing_archive) {
+			int loaded_FATs = 0;
+			size_t loaded_catalogs = 0;
+			while (loaded_catalogs < arch->disks.size()) {
+				err_code = arch->disks[loaded_catalogs].load_FAT();
+				if (err_code != 0 && loaded_FATs == 0) { // Saving the first error
 					ArchiveData->OpenResult = err_code;
 					arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
-				} 
+				}
 				else {
-					++loaded_catalogs;
+					++loaded_FATs;
+					err_code = arch->disks[loaded_catalogs].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
+					if (err_code != 0 && loaded_catalogs == 0) { // Saving the first error
+						ArchiveData->OpenResult = err_code;
+						arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
+					}
+					else {
+						++loaded_catalogs;
+					}
 				}
 			}
-		}
 
-		if (loaded_catalogs > 0) {
-			ArchiveData->OpenResult = 0; // OK
-			return arch.release(); // Returns raw ptr and releases ownership 
+			if (loaded_catalogs > 0) {
+				ArchiveData->OpenResult = 0; // OK
+				return arch.release(); // Returns raw ptr and releases ownership 
+			}
+			else {
+				return nullptr;
+			}
 		}
 		else {
-			return nullptr;
+			ArchiveData->OpenResult = 0; // OK
+			return arch.release(); // Returns raw ptr and releases ownership 
 		}
 	}
 
@@ -1256,5 +1263,28 @@ extern "C" {
 		if (!res) { // Create default configuration if conf file is absent
 			plugin_config.write_conf();
 		}
+	}
+
+	// GetBackgroundFlags is called to determine whether a plugin supports background packing or unpacking.
+	// BACKGROUND_UNPACK        1 Calls to OpenArchive, ReadHeader(Ex), ProcessFile and CloseArchive are thread-safe 
+	DLLEXPORT int STDCALL GetBackgroundFlags(PackDefaultParamStruct* dps) {
+		return BACKGROUND_UNPACK;
+	}
+
+	DLLEXPORT int STDCALL CanYouHandleThisFile(char* FileName) { // BOOL == int 
+		//! TODO: Quick and dirty. Refactor.
+		is_just_probing_archive = true; 
+		tOpenArchiveData temp;
+		temp.ArcName = FileName;
+		temp.OpenMode = PK_OM_LIST;
+		auto res_ptr = OpenArchive(&temp);
+		is_just_probing_archive = false;
+		int is_OK = (res_ptr != nullptr);
+		delete res_ptr;
+		return is_OK;
+	}
+
+	DLLEXPORT int STDCALL GetPackerCaps() {
+		return PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT;
 	}
 }
