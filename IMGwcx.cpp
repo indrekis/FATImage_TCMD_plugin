@@ -82,7 +82,7 @@ using on_bad_BPB_callback_t = int(*)(void*);
 
 struct FAT_image_t
 {
-	enum FAT_types { unknow_type, FAT12_type, FAT16_type, FAT32_type, exFAT_type, FAT_DOS100_type, FAT_DOS110_type};
+	enum FAT_types { unknow_type, FAT12_type, FAT16_type, FAT32_type, exFAT_type}; // , FAT_DOS100_type, FAT_DOS110_type
 
 	static constexpr size_t sector_size = 512;
 	on_bad_BPB_callback_t on_bad_BPB_callback = nullptr;
@@ -119,7 +119,10 @@ struct FAT_image_t
 		boot_sector_offset = off;
 	}
 
-	// TODO: boot_sector_offset + ...
+	size_t get_boot_sector_offset() const {
+		return boot_sector_offset;
+	}
+
 	size_t cluster_to_image_off(uint32_t cluster) {
 		return get_data_area_offset() + static_cast<size_t>(cluster - 2) * get_cluster_size(); //-V104
 	}
@@ -301,8 +304,8 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 	}
 
 	cluster_size_m = sector_size * bootsec.BPB_SecPerClus;
-	FAT1area_off_m = sector_size * bootsec.BPB_RsvdSecCnt;
-	rootarea_off_m = sector_size * (bootsec.BPB_RsvdSecCnt +
+	FAT1area_off_m = get_boot_sector_offset() + sector_size * bootsec.BPB_RsvdSecCnt;
+	rootarea_off_m = get_boot_sector_offset() + sector_size * (bootsec.BPB_RsvdSecCnt +
 		get_sectors_per_FAT() * static_cast<size_t>(bootsec.BPB_NumFATs)); //-V104
 	dataarea_off_m = get_root_area_offset() + get_root_dir_entry_count() * sizeof(FATxx_dir_entry_t);
 
@@ -406,7 +409,8 @@ int FAT_image_t::process_DOS1xx_image() {
 	
 	uint8_t media_descr = 0;
 
-	auto res = set_file_pointer(hArchFile, boot_sector_offset + sector_size);
+	// Using get_boot_sector_offset() is questionable here -- partitions should have BPB, but it does not harm.
+	auto res = set_file_pointer(hArchFile, get_boot_sector_offset() + sector_size); 
 	if (!res) {
 		return E_EREAD;
 	}
@@ -498,7 +502,7 @@ int FAT_image_t::load_FAT() {
 		return E_NO_MEMORY;
 	}
 	// Read FAT table
-	set_file_pointer(hArchFile, boot_sector_offset + get_FAT1_area_offset());
+	set_file_pointer(hArchFile, get_FAT1_area_offset());
 	auto result = read_file(hArchFile, fattable.data(), fat_size_bytes);
 	if (result != fat_size_bytes)
 	{
@@ -527,7 +531,8 @@ uint64_t FAT_image_t::get_total_sectors_in_volume() const {
 }
 
 uint64_t FAT_image_t::get_data_sectors_in_volume() const {
-	return get_total_sectors_in_volume() - get_data_area_offset() / bootsec.BPB_bytesPerSec;
+	return get_total_sectors_in_volume() - 
+		(get_data_area_offset() - get_boot_sector_offset() )/ bootsec.BPB_bytesPerSec;
 }
 
 uint64_t FAT_image_t::get_data_clusters_in_volume() const {
@@ -536,8 +541,8 @@ uint64_t FAT_image_t::get_data_clusters_in_volume() const {
 
 FAT_image_t::FAT_types FAT_image_t::detect_FAT_type() const {
 // See http://jdebp.info/FGA/determining-fat-widths.html
-	auto sectors = bootsec.BPB_bytesPerSec;
-	if(sectors == 0){
+	auto bytes_per_sector = bootsec.BPB_bytesPerSec;
+	if(bytes_per_sector == 0){
 		return FAT_image_t::exFAT_type;
 	}
 	auto clusters = get_data_clusters_in_volume();
@@ -589,7 +594,7 @@ int FAT_image_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 				close_file(hUnpFile);
 				return E_UNKNOWN_FORMAT;
 			}
-			set_file_pointer(hArchFile, boot_sector_offset + cluster_to_image_off(nextclus));
+			set_file_pointer(hArchFile, cluster_to_image_off(nextclus));
 			size_t towrite = std::min<size_t>(get_cluster_size(), remaining);
 			size_t result = read_file(hArchFile, buff.data(), towrite);
 			if (result != towrite)
@@ -631,11 +636,11 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 	size_t portion_size = 0;
 	if (firstclus == 0)
 	{   // Read whole FAT12/16 dir at once
-		set_file_pointer(hArchFile, boot_sector_offset + get_root_area_offset());
+		set_file_pointer(hArchFile, get_root_area_offset());
 		portion_size = get_root_dir_size();
 	}
 	else {
-		set_file_pointer(hArchFile, boot_sector_offset + cluster_to_image_off(firstclus));
+		set_file_pointer(hArchFile, cluster_to_image_off(firstclus));
 		portion_size = static_cast<size_t>(get_cluster_size());
 	}
 	size_t records_number = portion_size / sizeof(FATxx_dir_entry_t);
@@ -746,7 +751,7 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 		else {
 			firstclus = next_cluster_FAT(firstclus);
 			if ((firstclus <= 1) || (firstclus >= max_cluster_FAT())) { return 0; }
-			set_file_pointer(hArchFile, boot_sector_offset + cluster_to_image_off(firstclus)); //-V104
+			set_file_pointer(hArchFile, cluster_to_image_off(firstclus)); //-V104
 		}
 		result = read_file(hArchFile, sector.get(), portion_size);
 		if (result != portion_size) {
@@ -801,7 +806,6 @@ uint32_t FAT_image_t::next_cluster_FAT32(uint32_t firstclus) const
 
 uint32_t FAT_image_t::next_cluster_FAT(uint32_t firstclus) const
 {
-	// TODO: Replace by function pointer
 	switch (FAT_type) {
 	case FAT12_type:
 		return next_cluster_FAT12(firstclus);
@@ -824,7 +828,6 @@ uint32_t FAT_image_t::next_cluster_FAT(uint32_t firstclus) const
 //! See also max_normal_cluster_FAT().
 uint32_t FAT_image_t::max_cluster_FAT() const
 {
-	// TODO: Replace by array
 	switch (FAT_type) {
 	case FAT12_type:
 		return 0xFF6;
@@ -842,7 +845,6 @@ uint32_t FAT_image_t::max_cluster_FAT() const
 
 uint32_t FAT_image_t::max_normal_cluster_FAT() const
 {
-	// TODO: Replace by array
 	switch (FAT_type) {
 	case FAT12_type:
 		return 0xFF0-1;
