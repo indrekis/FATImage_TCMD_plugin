@@ -139,7 +139,7 @@ bool plugin_config_t::write_conf()
     cf << "# WinImage-like behavior -- if boot is not on the beginning of the file, \n";
     cf << "# search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA\n";
     cf << "search_for_boot_sector=" << search_for_boot_sector << '\n';
-    cf << "search_for_boot_sector_range=" << search_for_boot_sector_range << '\n';
+    cf << "search_for_boot_sector_range=" << search_for_boot_sector_range << '\n'; //-V128
     cf << '\n';
     return true;
 }

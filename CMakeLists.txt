@@ -18,4 +18,8 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 	set_target_properties(IMGwcx64 PROPERTIES SUFFIX .wcx PREFIX "") 	
 endif()
 
+find_package(FLTK CONFIG REQUIRED)
+target_link_libraries(IMGwcx64 PRIVATE fltk fltk_gl fltk_forms fltk_images)
+	
+
 # https://www.ghisler.ch/wiki/index.php?title=Plugins_Automated_Installation

@@ -29,6 +29,9 @@
 #include <map>
 #include <cassert>
 
+#include <FL/Fl.H>
+#include <FL/Fl_Window.H>
+#include <FL/Fl_Box.H>
 using std::nothrow, std::uint8_t;
 
 #ifdef _WIN32
