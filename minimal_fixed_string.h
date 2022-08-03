@@ -53,6 +53,12 @@ public:
 		size_m = new_size;
 		data_m[size_m] = '\0';
 	}
+	void pop_back() {
+		if (size_m  == 0)
+			return;
+		--size_m;
+		data_m[size_m] = '\0';
+	}
 	size_t find_last(char c) const {
 		const char* last = strrchr(data(), c);
 		if (last == nullptr)

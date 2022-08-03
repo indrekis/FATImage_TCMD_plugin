@@ -83,12 +83,14 @@ struct whole_disk_t;
 
 struct FAT_image_t
 {
-	enum FAT_types { unknow_type, FAT12_type, FAT16_type, FAT32_type, exFAT_type}; // , FAT_DOS100_type, FAT_DOS110_type
+	enum FAT_types { unknown_FS_type, FAT12_type, FAT16_type, FAT32_type, exFAT_type}; // , FAT_DOS100_type, FAT_DOS110_type
 	
 	const whole_disk_t* whole_disk_ptr = nullptr;
 	size_t boot_sector_offset = 0;
 
-	FAT_types FAT_type = unknow_type;
+	bool is_processed_m = false;	// Useful when unknown FS or empty FAT FS
+
+	FAT_types FAT_type = unknown_FS_type;
 	bool has_OS2_EA = false;
 
 	std::vector<uint8_t> fattable;
@@ -166,6 +168,17 @@ struct FAT_image_t
 	uint64_t get_data_sectors_in_volume() const;
 	uint64_t get_data_clusters_in_volume() const;
 
+	bool is_processed() const {
+		if (arc_dir_entries.empty())
+			return is_processed_m;
+		else
+			return counter == arc_dir_entries.size();
+	}
+
+	void set_processed_for_empty() {
+		is_processed_m = true;
+	}
+
 	int process_bootsector(bool read_bootsec);
 	int process_DOS1xx_image();
 
@@ -174,6 +187,10 @@ struct FAT_image_t
 	int load_FAT();
 
 	FAT_types detect_FAT_type() const;
+
+	bool is_known_FS_type() const {
+		return FAT_type == FAT12_type || FAT_type == FAT16_type || FAT_type == FAT32_type;
+	}
 
 	int extract_to_file(file_handle_t hUnpFile, uint32_t idx);
 
@@ -358,7 +375,7 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 			return E_UNKNOWN_FORMAT; // Not yet implemented;
 		}		
 		break;
-	case unknow_type:
+	case unknown_FS_type:
 		return E_UNKNOWN_FORMAT;
 	default:
 		//! Here also unsupported (yet) formats like exFAT
@@ -573,14 +590,14 @@ FAT_image_t::FAT_types FAT_image_t::detect_FAT_type() const {
 	if (strncmp(bootsec.EBPB_FAT.BS_FilSysType, "FAT12   ", 8) == 0) {
 		if (clusters > 0x0FF6) {
 			// TODO: inconsistent 
-			return FAT_image_t::unknow_type;
+			return FAT_image_t::unknown_FS_type;
 		}
 		return FAT_image_t::FAT12_type;
 	}
 	if (strncmp(bootsec.EBPB_FAT.BS_FilSysType, "FAT16   ", 8) == 0) {
 		if (clusters > 0x0FFF6) {
 			// TODO: inconsistent
-			return FAT_image_t::unknow_type;
+			return FAT_image_t::unknown_FS_type;
 		}
 		return FAT_image_t::FAT16_type;
 	}
@@ -602,7 +619,7 @@ FAT_image_t::FAT_types FAT_image_t::detect_FAT_type() const {
 	if (clusters >= 0x0000FFF7 && clusters <= 0x0FFFFFF6) { // 65527–268435446
 		return FAT_image_t::FAT32_type;
 	}
-	return FAT_image_t::unknow_type; // Unknown format
+	return FAT_image_t::unknown_FS_type; // Unknown format
 }
 
 int FAT_image_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
@@ -1059,12 +1076,12 @@ int whole_disk_t::process_volumes() {
 				first_err_code = disks[0].process_bootsector(true);
 				for (size_t i = 1; i < partition_info.size(); ++i) {
 					// Looks like push and then pop wrong would be more efficient now -- before move operations are implemented
-					disks.push_back(disks[0]);
-					disks[i].set_boot_sector_offset(partition_info[i].first_sector * sector_size);
-					err_code = disks[i].process_bootsector(true);
+					disks.emplace_back(this);
+					disks.back().set_boot_sector_offset(partition_info[i].first_sector * sector_size);
+					err_code = disks.back().process_bootsector(true);
 					if (err_code) {
 						// Unknown partition
-						disks.pop_back();
+						// disks.pop_back();
 					}
 				}
 				if (disks.empty() || (first_err_code != 0 && disks.size() == 1)) {
@@ -1080,10 +1097,10 @@ int whole_disk_t::process_volumes() {
 		}
 	}
 
-	if (err_code == 0 && first_err_code) {
+//	if (err_code == 0 && first_err_code) {
 		// We have some partitions but first partition is not known
-		disks.erase(disks.begin());
-	}
+//		disks.erase(disks.begin());
+//	}
 	// No partitions -- attempt to find boot sector
 	if (err_code != 0) {
 		if (disks[0].search_for_bootsector() == 0) {
@@ -1128,18 +1145,20 @@ extern "C" {
 
 		int loaded_FATs = 0;
 		size_t loaded_catalogs = 0;
-		while (loaded_catalogs < arch->disks.size()) {
-			err_code = arch->disks[loaded_catalogs].load_FAT();
+		for (size_t i = 0; i < arch->disks.size(); ++i) {
+			if ( !arch->disks[i].is_known_FS_type() )
+				continue;
+			err_code = arch->disks[i].load_FAT();
 			if (err_code != 0 && loaded_FATs == 0) { // Saving the first error
 				ArchiveData->OpenResult = err_code;
-				arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
+				// arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
 			}
 			else {
 				++loaded_FATs;
-				err_code = arch->disks[loaded_catalogs].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
+				err_code = arch->disks[i].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
 				if (err_code != 0 && loaded_catalogs == 0) { // Saving the first error
 					ArchiveData->OpenResult = err_code;
-					arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
+					// arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
 				}
 				else {
 					++loaded_catalogs;
@@ -1159,34 +1178,36 @@ extern "C" {
 	// TCmd calls ReadHeader to find out what files are in the archive
 	DLLEXPORT int STDCALL ReadHeader(archive_HANDLE hArcData, tHeaderData* HeaderData)
 	{
-		auto& prev_current_disk = hArcData->disks[hArcData->disc_counter]; // Optimization
-		if (prev_current_disk.counter ==				  //-V104
-			prev_current_disk.arc_dir_entries.size() ||
-			prev_current_disk.arc_dir_entries.empty()
-			) { //-V104
+		auto& prev_current_disk = hArcData->disks[hArcData->disc_counter]; 
+		if ( prev_current_disk.is_processed() ) { //-V104
 			prev_current_disk.counter = 0;
 			++hArcData->disc_counter;
 			if (hArcData->disc_counter == hArcData->disks.size()) { //-V104
 				hArcData->disc_counter = 0;
 				return E_END_ARCHIVE;
 			}
-
 		}
+		prev_current_disk.set_processed_for_empty();
 		// get_disk_prefix
 		auto& current_disk = hArcData->disks[hArcData->disc_counter];
 		strcpy(HeaderData->ArcName, hArcData->archname.data());
 		if (hArcData->disks.size() == 1) {
 			strcpy(HeaderData->FileName, current_disk.arc_dir_entries[current_disk.counter].PathName.data());
 		}
-		else {
-			auto res = hArcData->get_disk_prefix(hArcData->disc_counter);
+		else {			
+			auto disk_name = hArcData->get_disk_prefix(hArcData->disc_counter); // Case of empty or unknown partitions
 			//! If disk empty -- put only dir with its name
-			if( !hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty() )
-				res.push_back(current_disk.arc_dir_entries[current_disk.counter].PathName);
-			strcpy(HeaderData->FileName, res.data());
-
+			if ( !hArcData->disks[hArcData->disc_counter].is_known_FS_type() ) {
+				disk_name.pop_back();
+				disk_name.push_back("_Unknown");
+			}
+			else if( !hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty() )
+				disk_name.push_back(current_disk.arc_dir_entries[current_disk.counter].PathName);
+			strcpy(HeaderData->FileName, disk_name.data());
 		}
-		if (!hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty()) {
+		if (!hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty() && 
+			hArcData->disks[hArcData->disc_counter].is_known_FS_type() )
+		{
 			HeaderData->FileAttr = current_disk.arc_dir_entries[current_disk.counter].FileAttr;
 			HeaderData->FileTime = current_disk.arc_dir_entries[current_disk.counter].FileTime;
 			// For files larger than 2Gb -- implement tHeaderDataEx
