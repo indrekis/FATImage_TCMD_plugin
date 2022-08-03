@@ -54,8 +54,6 @@ BOOL APIENTRY DllMain(HANDLE hModule,
 	return TRUE;
 }
 
-thread_local bool is_just_probing_archive = false;
-
 bool set_file_attributes_ex(const char* filename, FAT_attrib_t attribute) {
 	/*
 	DWORD winattr = FILE_ATTRIBUTE_NORMAL;
@@ -80,15 +78,14 @@ plugin_config_t plugin_config;
 
 using on_bad_BPB_callback_t = int(*)(void*);
 
+//! Contains archive configuration, so FAT_image_t needs it
+struct whole_disk_t; 
+
 struct FAT_image_t
 {
 	enum FAT_types { unknow_type, FAT12_type, FAT16_type, FAT32_type, exFAT_type}; // , FAT_DOS100_type, FAT_DOS110_type
-
-	static constexpr size_t sector_size = 512;
-	on_bad_BPB_callback_t on_bad_BPB_callback = nullptr;
-	int openmode_m = PK_OM_LIST;
-	file_handle_t hArchFile = file_handle_t();    //opened file handle
-	size_t image_file_size    = 0;	
+	
+	const whole_disk_t* whole_disk_ptr = nullptr;
 	size_t boot_sector_offset = 0;
 
 	FAT_types FAT_type = unknow_type;
@@ -107,12 +104,10 @@ struct FAT_image_t
 	FAT_image_t(const FAT_image_t&) = default;
 	FAT_image_t& operator=(const FAT_image_t&) = default;
 
-	FAT_image_t(on_bad_BPB_callback_t clb, size_t vol_size, file_handle_t fh, int openmode) :
-		image_file_size(vol_size), on_bad_BPB_callback(clb), openmode_m(openmode), hArchFile(fh)
+	FAT_image_t(const whole_disk_t* ptr) : whole_disk_ptr(ptr)
 	{		
 	}
 
-	// File is closed by the MBR archive -- whole_disk_t
 	~FAT_image_t() = default; 
 
 	void set_boot_sector_offset(size_t off) {
@@ -136,9 +131,7 @@ struct FAT_image_t
 		}
 	}
 
-	size_t get_bytes_per_FAT() const {
-		return get_sectors_per_FAT() * sector_size; //-V104
-	}
+	size_t get_bytes_per_FAT() const;
 
 	uint32_t get_root_dir_entry_count() const {
 		// MS-DOS supports 240 max for FDD and 512 for HDD
@@ -163,6 +156,11 @@ struct FAT_image_t
 	uint32_t get_cluster_size() const {
 		return cluster_size_m;
 	}
+
+	size_t get_sector_size() const;
+	auto   get_openmode() const;
+	size_t get_image_file_size() const;
+	file_handle_t get_archive_handler() const;
 
 	uint64_t get_total_sectors_in_volume() const;
 	uint64_t get_data_sectors_in_volume() const;
@@ -224,25 +222,28 @@ struct FAT_image_t
 
 struct partition_info_t {
 	uint32_t first_sector = 0;
-	uint32_t last_sector = 0;
-
+	uint32_t last_sector  = 0;
+	uint8_t  partition_id = 0;
 };
 
 struct whole_disk_t {
-	static constexpr size_t sector_size = 512; // Duplicated in FAT_image_t for the future support of 
-											   // non-partitioned disks with other sizes of sectors
+	static constexpr uint32_t sector_size = 512; 
 	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
-	file_handle_t hArchFile = file_handle_t();    //opened file handles
+	file_handle_t hArchFile = file_handle_t(); //opened file handles
+	int openmode_m = PK_OM_LIST;
+	size_t image_file_size = 0;	
+
+	on_bad_BPB_callback_t on_bad_BPB_callback = nullptr;
 
 	tChangeVolProc   pLocChangeVol = nullptr;
 	tProcessDataProc pLocProcessData = nullptr;
 
 	whole_disk_t(on_bad_BPB_callback_t clb, const char* archname_in, size_t vol_size, file_handle_t fh, int openmode):
-		hArchFile{ fh }
+		hArchFile{ fh }, openmode_m(openmode), image_file_size(vol_size), on_bad_BPB_callback(clb)
 	{
 		archname.push_back(archname_in);
 		// First disk represents also non-partitioned image -- so, initially, it's size = whole image size.
-		disks.emplace_back(clb, vol_size, fh, openmode);
+		disks.emplace_back(this);
 	}
 
 	// Note that disks, partition_info, mbrs are not synchronized. 
@@ -276,36 +277,59 @@ struct whole_disk_t {
 		if (hArchFile)
 			close_file(hArchFile);
 	}
+
+	//! Process boot record if it is a single-disk volume or process all known volumes from the MBR 
+	int process_volumes();
 };
 
-//------- archive_t implementation -----------------------------
+//------- FAT_image_t implementation -----------------------------
+// Though using methods of the whole_disk_t would be more OOP-style, code verbosity becomes too large for me (Indrekis)
+size_t FAT_image_t::get_sector_size() const {
+	return whole_disk_ptr->sector_size; //-V109
+}
+
+size_t FAT_image_t::get_bytes_per_FAT() const {
+	return get_sectors_per_FAT() * get_sector_size(); //-V104 //-V109
+}
+
+auto FAT_image_t::get_openmode() const {
+	return whole_disk_ptr->openmode_m;
+}
+
+file_handle_t FAT_image_t::get_archive_handler() const { 
+	return whole_disk_ptr->hArchFile; 
+}
+
+size_t FAT_image_t::get_image_file_size() const {
+	return whole_disk_ptr->image_file_size;
+}
 
 int FAT_image_t::process_bootsector(bool read_bootsec) {
 	if(read_bootsec){
-		set_file_pointer(hArchFile, boot_sector_offset);
-		auto result = read_file(hArchFile, &bootsec, sector_size);
-		if (result != sector_size) {
+		set_file_pointer(get_archive_handler(), boot_sector_offset);
+		auto result = read_file(get_archive_handler(), &bootsec, get_sector_size());
+		if (result != get_sector_size()) {
 			return E_EREAD;
 		}
 	}
 	// if read_bootsec == false -- user preread bootsector
 
-	if (bootsec.BPB_bytesPerSec != sector_size) {
+	if (bootsec.BPB_bytesPerSec != get_sector_size()) {
 		return E_UNKNOWN_FORMAT;
 	}
 
 	if (bootsec.signature != 0xAA55 && !plugin_config.ignore_boot_signature) {
-		if (openmode_m == PK_OM_LIST) {
-			int res = on_bad_BPB_callback(this);
+		if (get_openmode() == PK_OM_LIST) {
+			int res = whole_disk_ptr->on_bad_BPB_callback(this);
 			if (res != 0) {
 				return res;
 			}
 		}
 	}
 
-	cluster_size_m = sector_size * bootsec.BPB_SecPerClus;
-	FAT1area_off_m = get_boot_sector_offset() + sector_size * bootsec.BPB_RsvdSecCnt;
-	rootarea_off_m = get_boot_sector_offset() + sector_size * (bootsec.BPB_RsvdSecCnt +
+	cluster_size_m = static_cast<uint32_t>(get_sector_size() * bootsec.BPB_SecPerClus);
+	FAT1area_off_m = get_boot_sector_offset() + get_sector_size() * bootsec.BPB_RsvdSecCnt;
+	rootarea_off_m = get_boot_sector_offset() + get_sector_size() * (bootsec.BPB_RsvdSecCnt +
 		get_sectors_per_FAT() * static_cast<size_t>(bootsec.BPB_NumFATs)); //-V104
 	dataarea_off_m = get_root_area_offset() + get_root_dir_entry_count() * sizeof(FATxx_dir_entry_t);
 
@@ -410,24 +434,24 @@ int FAT_image_t::process_DOS1xx_image() {
 	uint8_t media_descr = 0;
 
 	// Using get_boot_sector_offset() is questionable here -- partitions should have BPB, but it does not harm.
-	auto res = set_file_pointer(hArchFile, get_boot_sector_offset() + sector_size); 
+	auto res = set_file_pointer( get_archive_handler(), get_boot_sector_offset() + get_sector_size() ); 
 	if (!res) {
 		return E_EREAD;
 	}
-	auto rdres = read_file(hArchFile, &media_descr, 1);
+	auto rdres = read_file(get_archive_handler(), &media_descr, 1);
 	if (rdres != 1) {
 		return E_EREAD;
 	}
-	memcpy_s(&bootsec, sector_size, raw_DOS200_bootsector, sizeof(raw_DOS200_bootsector));
+	memcpy_s(&bootsec, get_sector_size(), raw_DOS200_bootsector, sizeof(raw_DOS200_bootsector));
 	switch (media_descr) {
 	case 0xFE: // 5.25" 160Kb/163'840b img; H:C:S = 1:40:8, DOS 1.00
-		if (image_file_size != 160 * 1024) {
+		if (get_image_file_size() != 160 * 1024) {
 			return E_UNKNOWN_FORMAT; 
 		}
 		bootsec.BPB_SecPerClus = 1;
 		bootsec.BPB_RsvdSecCnt = 1;
 		bootsec.BPB_NumFATs	   = 2;
-		bootsec.BPB_RootEntCnt = (sector_size/sizeof(FATxx_dir_entry_t))*4; // 4 sectors in root dir
+		bootsec.BPB_RootEntCnt = static_cast<uint16_t>((get_sector_size()/sizeof(FATxx_dir_entry_t)) * 4); // 4 sectors in root dir
 		bootsec.BPB_TotSec16   = 320;
 		bootsec.BPB_MediaDescr = 0xFE;
 		bootsec.BPB_SectorsPerFAT = 1;
@@ -435,13 +459,13 @@ int FAT_image_t::process_DOS1xx_image() {
 		// Hidden sectors = 0
 		break;
 	case 0xFC: // 5.25" 180Kb/184'320b img; H:C:S = 1:40:9, DOS 2.00
-		if (image_file_size != 180 * 1024) {
+		if (get_image_file_size() != 180 * 1024) {
 			return E_UNKNOWN_FORMAT;
 		}
 		bootsec.BPB_SecPerClus = 1;
 		bootsec.BPB_RsvdSecCnt = 1;
 		bootsec.BPB_NumFATs    = 2;
-		bootsec.BPB_RootEntCnt = (sector_size / sizeof(FATxx_dir_entry_t)) * 4; // 4 sectors in root dir
+		bootsec.BPB_RootEntCnt = static_cast<uint16_t>((get_sector_size() / sizeof(FATxx_dir_entry_t)) * 4); // 4 sectors in root dir
 		bootsec.BPB_TotSec16   = 360;
 		bootsec.BPB_MediaDescr = 0xFC;
 		bootsec.BPB_SectorsPerFAT = 2;
@@ -449,9 +473,9 @@ int FAT_image_t::process_DOS1xx_image() {
 		// Hidden sectors = 0
 		break;
 	case 0xFF: // 5.25" 320Kb/327'680b img; H:C:S = 2:40:8, DOS 1.10
-		if (image_file_size != 320 * 1024) {
+		if (get_image_file_size() != 320 * 1024) {
 			if (plugin_config.process_DOS1xx_exceptions) {  // 331792
-				if (image_file_size != 331'792) {
+				if (get_image_file_size() != 331'792) {
 					//! Exception for the "MS-DOS 1.12.ver.1.12 OEM [Compaq]" image, containing 
 					//! 4112 bytes at the end, bracketed by "Skip  8 blocks " text.
 					return E_UNKNOWN_FORMAT;
@@ -465,7 +489,7 @@ int FAT_image_t::process_DOS1xx_image() {
 		bootsec.BPB_SecPerClus = 2;
 		bootsec.BPB_RsvdSecCnt = 1;
 		bootsec.BPB_NumFATs    = 2;
-		bootsec.BPB_RootEntCnt = (sector_size / sizeof(FATxx_dir_entry_t)) * 7; // 7 sectors in root dir
+		bootsec.BPB_RootEntCnt = static_cast<uint16_t>((get_sector_size() / sizeof(FATxx_dir_entry_t)) * 7); // 7 sectors in root dir
 		bootsec.BPB_TotSec16   = 640;
 		bootsec.BPB_MediaDescr = 0xFF;
 		bootsec.BPB_SectorsPerFAT = 1;
@@ -473,13 +497,13 @@ int FAT_image_t::process_DOS1xx_image() {
 		// Hidden sectors = 0
 		break;
 	case 0xFD: // 5.25" 360Kb/368'640b img; H:C:S = 2:40:8, DOS 1.10
-		if (image_file_size != 360 * 1024) {
+		if (get_image_file_size() != 360 * 1024) {
 			return E_UNKNOWN_FORMAT;
 		}
 		bootsec.BPB_SecPerClus = 2;
 		bootsec.BPB_RsvdSecCnt = 1;
 		bootsec.BPB_NumFATs    = 2;
-		bootsec.BPB_RootEntCnt = (sector_size / sizeof(FATxx_dir_entry_t)) * 7; // 7 sectors in root dir
+		bootsec.BPB_RootEntCnt = static_cast<uint16_t>((get_sector_size() / sizeof(FATxx_dir_entry_t)) * 7); // 7 sectors in root dir
 		bootsec.BPB_TotSec16   = 720;
 		bootsec.BPB_MediaDescr = 0xFD;
 		bootsec.BPB_SectorsPerFAT = 2;
@@ -502,8 +526,8 @@ int FAT_image_t::load_FAT() {
 		return E_NO_MEMORY;
 	}
 	// Read FAT table
-	set_file_pointer(hArchFile, get_FAT1_area_offset());
-	auto result = read_file(hArchFile, fattable.data(), fat_size_bytes);
+	set_file_pointer(get_archive_handler(), get_FAT1_area_offset());
+	auto result = read_file(get_archive_handler(), fattable.data(), fat_size_bytes);
 	if (result != fat_size_bytes)
 	{
 		return E_EREAD;
@@ -594,9 +618,9 @@ int FAT_image_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 				close_file(hUnpFile);
 				return E_UNKNOWN_FORMAT;
 			}
-			set_file_pointer(hArchFile, cluster_to_image_off(nextclus));
+			set_file_pointer(get_archive_handler(), cluster_to_image_off(nextclus));
 			size_t towrite = std::min<size_t>(get_cluster_size(), remaining);
-			size_t result = read_file(hArchFile, buff.data(), towrite);
+			size_t result = read_file(get_archive_handler(), buff.data(), towrite);
 			if (result != towrite)
 			{
 				close_file(hUnpFile);
@@ -636,11 +660,11 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 	size_t portion_size = 0;
 	if (firstclus == 0)
 	{   // Read whole FAT12/16 dir at once
-		set_file_pointer(hArchFile, get_root_area_offset());
+		set_file_pointer(get_archive_handler(), get_root_area_offset());
 		portion_size = get_root_dir_size();
 	}
 	else {
-		set_file_pointer(hArchFile, cluster_to_image_off(firstclus));
+		set_file_pointer(get_archive_handler(), cluster_to_image_off(firstclus));
 		portion_size = static_cast<size_t>(get_cluster_size());
 	}
 	size_t records_number = portion_size / sizeof(FATxx_dir_entry_t);
@@ -658,7 +682,7 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 	if ( (firstclus == 1) || (firstclus >= max_cluster_FAT()) ) {
 		return E_UNKNOWN_FORMAT;
 	}
-	size_t result = read_file(hArchFile, sector.get(), portion_size);
+	size_t result = read_file(get_archive_handler(), sector.get(), portion_size);
 	if (result != portion_size) {
 		return E_EREAD;
 	} 
@@ -753,9 +777,9 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 		else {
 			firstclus = next_cluster_FAT(firstclus);
 			if ((firstclus <= 1) || (firstclus >= max_cluster_FAT())) { return 0; }
-			set_file_pointer(hArchFile, cluster_to_image_off(firstclus)); //-V104
+			set_file_pointer(get_archive_handler(), cluster_to_image_off(firstclus)); //-V104
 		}
-		result = read_file(hArchFile, sector.get(), portion_size);
+		result = read_file(get_archive_handler(), sector.get(), portion_size);
 		if (result != portion_size) {
 			return E_EREAD;
 		}
@@ -890,12 +914,12 @@ int FAT_image_t::search_for_bootsector() {
 	if (buffer == nullptr) {
 		return E_NO_MEMORY;
 	}
-	set_file_pointer(hArchFile, 0);
-	auto result = read_file(hArchFile, buffer.get(), plugin_config.search_for_boot_sector_range);
+	set_file_pointer(get_archive_handler(), 0);
+	auto result = read_file(get_archive_handler(), buffer.get(), plugin_config.search_for_boot_sector_range);
 	if (result != plugin_config.search_for_boot_sector_range) {
 		return E_EREAD;
 	}
-	for(size_t i = 0; i<plugin_config.search_for_boot_sector_range-sector_size+1; ++i) {
+	for(size_t i = 0; i<plugin_config.search_for_boot_sector_range-get_sector_size()+1; ++i) {
 		uint8_t* EB_pos = static_cast<uint8_t*>(memchr(buffer.get() + i, 0xEB, plugin_config.search_for_boot_sector_range - i));
 		if (EB_pos == nullptr) {
 			return 1;
@@ -955,7 +979,8 @@ int whole_disk_t::process_MBR() {
 			}
 			partition_info_t curp;
 			curp.first_sector = mbrs[0].ptable[i].get_first_sec_by_LBA();
-			curp.last_sector = mbrs[0].ptable[i].get_last_sec_by_LBA();
+			curp.last_sector  = mbrs[0].ptable[i].get_last_sec_by_LBA();
+			curp.partition_id = mbrs[0].ptable[i].type;
 			if (mbrs[0].ptable[i].is_extended()) { //-V807
 				if (extended_partition_idx != -1) {
 #ifdef _WIN32
@@ -972,7 +997,7 @@ int whole_disk_t::process_MBR() {
 					extended_partition_idx = i;
 				}
 				while (true) {
-					set_file_pointer(hArchFile, curp.first_sector * sector_size); //-V104
+					set_file_pointer(hArchFile, static_cast<size_t>(curp.first_sector) * sector_size); 
 					mbrs.push_back({});
 					auto result = read_file(hArchFile, &mbrs.back(), sector_size);
 					if (result != sector_size) {
@@ -995,6 +1020,7 @@ int whole_disk_t::process_MBR() {
 					// EBR size does not accounts for unused sectors before the EBR and start of the partition
 					curp_ext.last_sector = curp_ext.first_sector
 						+ mbrs.back().ptable[0].get_last_sec_by_LBA();
+					curp_ext.partition_id = mbrs.back().ptable[0].type;
 					partition_info.push_back(curp_ext);
 					if (!mbrs.back().has_next_extended_record())
 						break;
@@ -1002,6 +1028,7 @@ int whole_disk_t::process_MBR() {
 					curp.first_sector = curp.first_sector + mbrs.back().ptable[1].get_first_sec_by_LBA();
 					// EBR next size starts counts from the next EBR:
 					curp.last_sector = curp_ext.last_sector + mbrs.back().ptable[1].get_last_sec_by_LBA();
+					curp.partition_id = mbrs.back().ptable[1].type;
 				}
 			}
 			else {
@@ -1014,7 +1041,58 @@ int whole_disk_t::process_MBR() {
 	return 0;
 }
 
+int whole_disk_t::process_volumes() {
+	auto err_code = disks[0].process_bootsector(true);
 
+	if (err_code != 0) {
+		if (plugin_config.process_DOS1xx_images) {
+			err_code = disks[0].process_DOS1xx_image();
+		}
+	}
+	int first_err_code = 0;
+	if (err_code != 0) {
+		if (plugin_config.process_MBR) {
+			err_code = process_MBR();
+			if (!err_code) {
+				// Single partition -- treat as a non-partitioned disk for viewing
+				disks[0].set_boot_sector_offset(partition_info[0].first_sector * sector_size);
+				first_err_code = disks[0].process_bootsector(true);
+				for (size_t i = 1; i < partition_info.size(); ++i) {
+					// Looks like push and then pop wrong would be more efficient now -- before move operations are implemented
+					disks.push_back(disks[0]);
+					disks[i].set_boot_sector_offset(partition_info[i].first_sector * sector_size);
+					err_code = disks[i].process_bootsector(true);
+					if (err_code) {
+						// Unknown partition
+						disks.pop_back();
+					}
+				}
+				if (disks.empty() || (first_err_code != 0 && disks.size() == 1)) {
+					err_code = E_UNKNOWN_FORMAT;
+				}
+				else {
+					err_code = 0;
+				}
+			}
+			else {
+				err_code = E_UNKNOWN_FORMAT;
+			}
+		}
+	}
+
+	if (err_code == 0 && first_err_code) {
+		// We have some partitions but first partition is not known
+		disks.erase(disks.begin());
+	}
+	// No partitions -- attempt to find boot sector
+	if (err_code != 0) {
+		if (disks[0].search_for_bootsector() == 0) {
+			err_code = disks[0].process_bootsector(true);
+		}
+	}
+
+	return err_code;
+}
 //-----------------------=[ DLL exports ]=--------------------
 
 extern "C" {
@@ -1046,93 +1124,35 @@ extern "C" {
 			return nullptr;
 		}
 
-		auto err_code = arch->disks[0].process_bootsector(true);
+		auto err_code = arch->process_volumes();
 
-		if (err_code != 0) {
-			if (plugin_config.process_DOS1xx_images) {
-				err_code = arch->disks[0].process_DOS1xx_image();
+		int loaded_FATs = 0;
+		size_t loaded_catalogs = 0;
+		while (loaded_catalogs < arch->disks.size()) {
+			err_code = arch->disks[loaded_catalogs].load_FAT();
+			if (err_code != 0 && loaded_FATs == 0) { // Saving the first error
+				ArchiveData->OpenResult = err_code;
+				arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
 			}
-		}
-		int first_err_code = 0;
-		if (err_code != 0) {
-			if (plugin_config.process_MBR) {
-				err_code = arch->process_MBR();
-				if (!err_code) {
-					// Single partition -- treat as a non-partitioned disk for viewing
-					arch->disks[0].set_boot_sector_offset(arch->partition_info[0].first_sector * arch->sector_size);
-					first_err_code = arch->disks[0].process_bootsector(true);
-					for (size_t i = 1; i < arch->partition_info.size(); ++i) {
-						// Looks like push and then pop wrong would be more efficient now -- before move operations are implemented
-						arch->disks.push_back(arch->disks[0]);
-						arch->disks[i].set_boot_sector_offset(arch->partition_info[i].first_sector * arch->sector_size);
-						err_code = arch->disks[i].process_bootsector(true);
-						if (err_code) {
-							// Unknown partition
-							arch->disks.pop_back();
-						}
-					}
-					if (arch->disks.empty() || (first_err_code != 0 && arch->disks.size() == 1) ) {
-						err_code = E_UNKNOWN_FORMAT;
-					}
-					else {
-						err_code = 0;
-					}
-				}
-				else {
-					err_code = E_UNKNOWN_FORMAT;
-				}
-			}
-		}
-
-		if (err_code == 0 && first_err_code) {
-			// We have some partitions but first partition is not known
-			arch->disks.erase(arch->disks.begin());
-		}
-		// No partitions -- attempt to find boot sector
-		if (err_code != 0) {
-			if (arch->disks[0].search_for_bootsector() == 0) {
-				err_code = arch->disks[0].process_bootsector(true);
-			}
-		}
-
-		if (err_code != 0) {
-			ArchiveData->OpenResult = err_code;
-			return nullptr;
-		}
-
-		if (!is_just_probing_archive) {
-			int loaded_FATs = 0;
-			size_t loaded_catalogs = 0;
-			while (loaded_catalogs < arch->disks.size()) {
-				err_code = arch->disks[loaded_catalogs].load_FAT();
-				if (err_code != 0 && loaded_FATs == 0) { // Saving the first error
+			else {
+				++loaded_FATs;
+				err_code = arch->disks[loaded_catalogs].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
+				if (err_code != 0 && loaded_catalogs == 0) { // Saving the first error
 					ArchiveData->OpenResult = err_code;
 					arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
 				}
 				else {
-					++loaded_FATs;
-					err_code = arch->disks[loaded_catalogs].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
-					if (err_code != 0 && loaded_catalogs == 0) { // Saving the first error
-						ArchiveData->OpenResult = err_code;
-						arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
-					}
-					else {
-						++loaded_catalogs;
-					}
+					++loaded_catalogs;
 				}
 			}
-
-			if (loaded_catalogs > 0) {
-				ArchiveData->OpenResult = 0; // OK
-				return arch.release(); // Returns raw ptr and releases ownership 
-			}
-			else {
-				return nullptr;
-			}
 		}
-		else {
+
+		if (loaded_catalogs > 0) {
 			ArchiveData->OpenResult = 0; // OK
 			return arch.release(); // Returns raw ptr and releases ownership 
+		}
+		else {
+			return nullptr;
 		}
 	}
 
@@ -1275,15 +1295,18 @@ extern "C" {
 	}
 
 	DLLEXPORT int STDCALL CanYouHandleThisFile(char* FileName) { // BOOL == int 
-		//! TODO: Quick and dirty. Refactor.
-		is_just_probing_archive = true; 
-		tOpenArchiveData temp;
-		temp.ArcName = FileName;
-		temp.OpenMode = PK_OM_LIST;
-		auto res_ptr = OpenArchive(&temp);
-		is_just_probing_archive = false;
-		int is_OK = (res_ptr != nullptr);
-		delete res_ptr;
+		size_t image_file_size = get_file_size(FileName);
+		auto hArchFile = open_file_shared_read(FileName);
+		if (hArchFile == file_open_error_v)
+		{
+			return 0;
+		}
+		// Caching results here would complicate code too much as for now
+		whole_disk_t arch{ winAPI_msgbox_on_bad_BPB, FileName, image_file_size,
+				hArchFile, PK_OM_LIST };
+
+		auto err_code = arch.process_volumes();
+		int is_OK = (err_code != 0);
 		return is_OK;
 	}
 
