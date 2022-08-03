@@ -107,6 +107,7 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps)
         process_DOS1xx_exceptions = get_option_from_map<decltype(process_DOS1xx_exceptions)>("process_DOS1xx_exceptions"s);
         search_for_boot_sector = get_option_from_map<decltype(search_for_boot_sector)>("search_for_boot_sector"s);
         search_for_boot_sector_range = get_option_from_map<decltype(search_for_boot_sector_range)>("search_for_boot_sector_range"s);
+        debug_level = get_option_from_map<decltype(debug_level)>("debug_level"s);
     }
     catch (std::exception&) {
         return false; // Wrong configuration would be overwritten by default configuration.
@@ -117,6 +118,8 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps)
 }
 
 bool plugin_config_t::validate_conf() {
+    if (debug_level > 2)
+        return false;
     return true;
 }
 
@@ -140,6 +143,7 @@ bool plugin_config_t::write_conf()
     cf << "# search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA\n";
     cf << "search_for_boot_sector=" << search_for_boot_sector << '\n';
     cf << "search_for_boot_sector_range=" << search_for_boot_sector_range << '\n'; //-V128
+    cf << "debug_level=" << debug_level << '\n'; 
     cf << '\n';
     return true;
 }

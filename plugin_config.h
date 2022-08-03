@@ -29,6 +29,11 @@ struct plugin_config_t {
 										   // search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA
 	size_t search_for_boot_sector_range = 64 * 1024;
 
+	//! Enum is not convenient here because of I/O
+	static constexpr int NO_DEBUG     = 0;
+	static constexpr int DEBUGGER_MSG = 1;
+	static constexpr int GUI_MSG      = 2;
+	int debug_level = NO_DEBUG;
 	//------------------------------------------------------------
 	bool read_conf (const PackDefaultParamStruct* dps);
 	bool write_conf();
