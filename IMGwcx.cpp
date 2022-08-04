@@ -1010,11 +1010,11 @@ int whole_disk_t::process_MBR() {
 					);
 #endif 
 				}
-				else {
-					extended_partition_idx = i;
-				}
+				extended_partition_idx = i;
+				auto cur_ext_start = mbrs[0].ptable[i].get_first_sec_by_LBA();
+				uint32_t EBR_offset = 0;
 				while (true) {
-					set_file_pointer(hArchFile, static_cast<size_t>(curp.first_sector) * sector_size); 
+					set_file_pointer(hArchFile, (cur_ext_start + EBR_offset) * sector_size);
 					mbrs.push_back({});
 					auto result = read_file(hArchFile, &mbrs.back(), sector_size);
 					if (result != sector_size) {
@@ -1032,7 +1032,7 @@ int whole_disk_t::process_MBR() {
 					partition_info_t curp_ext;
 					// Starting sector for extended boot record (EBR) is a relative offset between this 
 					// EBR sector and the first sector of the logical partition
-					curp_ext.first_sector = curp.first_sector
+					curp_ext.first_sector = cur_ext_start + EBR_offset
 						+ mbrs.back().ptable[0].get_first_sec_by_LBA();
 					// EBR size does not accounts for unused sectors before the EBR and start of the partition
 					curp_ext.last_sector = curp_ext.first_sector
@@ -1042,10 +1042,8 @@ int whole_disk_t::process_MBR() {
 					if (!mbrs.back().has_next_extended_record())
 						break;
 					// EBR next starting sector = LBA address of next EBR minus LBA address of extended partition's first EBR
-					curp.first_sector = curp.first_sector + mbrs.back().ptable[1].get_first_sec_by_LBA();
 					// EBR next size starts counts from the next EBR:
-					curp.last_sector = curp_ext.last_sector + mbrs.back().ptable[1].get_last_sec_by_LBA();
-					curp.partition_id = mbrs.back().ptable[1].type;
+					EBR_offset = mbrs.back().ptable[1].get_first_sec_by_LBA();
 				}
 			}
 			else {
