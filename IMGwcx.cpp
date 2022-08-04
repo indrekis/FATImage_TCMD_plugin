@@ -29,9 +29,14 @@
 #include <map>
 #include <cassert>
 
+#define FLTK_ENABLED_EXPERIMENTAL 
+
+#ifdef FLTK_ENABLED_EXPERIMENTAL
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
 #include <FL/Fl_Box.H>
+#endif
+
 using std::nothrow, std::uint8_t;
 
 #ifdef _WIN32
