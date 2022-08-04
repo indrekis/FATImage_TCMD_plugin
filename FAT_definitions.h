@@ -595,6 +595,7 @@ static_assert(sizeof(MBR_t) == 512, "Wrong size of MBR_t");
 //	  http://www.edm2.com/index.php/Extended_Attributes_-_what_are_they_and_how_can_you_use_them_%3F
 //    http://www.edm2.com/index.php/Encapsulating_Extended_Attributes_-_Part_1/2
 //    http://www.edm2.com/index.php/Encapsulating_Extended_Attributes_-_Part_2/2
+// 7. http://www.emuverse.ru/wiki/Teledisk , https://hwiegman.home.xs4all.nl/fileformats/teledisk/wteledsk.htm
 // 
 // See also https://github.com/aaru-dps/Aaru -- Aaru Data Preservation Suite
 #endif 
