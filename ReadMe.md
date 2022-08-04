@@ -56,9 +56,122 @@ Configuration file, named fatdiskimg.ini, is searched at the path, provided by t
 Compilation
 ===========
 
-Code can be compiled using the Visual Studio project or CMakeLists.txt (tested using MSVC and MinGW). Uses C++20, with no obligatory external dependencies. 
+Code can be compiled using the Visual Studio project or CMakeLists.txt (tested using MSVC and MinGW). 
+
+Uses C++20, with no obligatory external dependencies. 
 
 As an experimental and optional feature, [FLTK](https://www.fltk.org/) is used to create dialogs and a logging window. 
+
+Examples of the command lines to compile are in the CMakeLists.txt.
+
+Preparing images for tests
+==========================
+
+The plugin was tested using two kinds of images:
+* Images of virtual machines and emulators used for different tasks.
+* Historical floppy images from the retro-computing sites: [WinWorld](https://winworldpc.com/home), [BetaArchive](https://www.betaarchive.com/database/browse.php), [Old-DOS](http://old-dos.ru/), [VETUSWARE](https://vetusware.com/), [Bitsavers](http://www.bitsavers.org/bits/)
+
+The plugin is tested on over 1000 floppy images and dozens of HDD images, including custom-made with up to eleven partitions.
+
+## Linux
+Linux loopback devices are a convenient approach to making test images. 
+
+### Example 1 -- partitioned image 
+
+Create image 1Gb in size: 
+
+`dd if=/dev/zero of=image_file.img bs=100M count=10`
+
+Create loopback device, connected to this file:
+
+`sudo losetup -fP image_file.img`
+
+Partition disk (put your device name in place of loop0):
+
+`sudo fdisk /dev/loop0`
+
+To check existing loopback devices: 
+
+`losetup -a`
+
+On using fdisk see [Partitioning with fdisk HOWTO](https://tldp.org/HOWTO/Partition/fdisk_partitioning.html) and [fdisk(8) man](https://man7.org/linux/man-pages/man8/fdisk.8.html).
+
+After the partitioning, loopback devices for partitions would have names like: 
+
+`/dev/loop0p1 /dev/loop0p2 /dev/loop0p3 /dev/loop0p4 /dev/loop0p5 /dev/loop0p6 /dev/loop0p7 /dev/loop0p8 /dev/loop0p9 /dev/loop0p10 /dev/loop0p11`
+
+Remember the special role of loop0p4 -- it is an extended partition, containing loop0p5 and so on.
+
+To create FAT12/FAT16/FAT32/, use the following commands, respectively:
+
+`sudo mkfs.fat -F 12 /dev/loop0p9`
+
+`sudo mkfs.fat -F 16 /dev/loop0p10`
+
+`sudo mkfs.fat -F 32 /dev/loop0p11`
+
+Remember to use the correct partition device. More details: [dosfstools](https://github.com/dosfstools/dosfstools)
+
+To populate image partitions with the files, one can mount it and use it as any other Linux volume:
+
+`mkdir ~/virtual_disk1`
+
+`sudo mount -o loop /dev/loop0p10 ~/virtual_disk1`
+
+Lately, unmount it by: 
+
+`sudo umount ~/virtual_disk1`
+
+The exact command lines could depend on your Linux distribution.
+
+### Example 1 -- nonpartitioned floppy image 
+
+`dd if=/dev/zero of=floppy_144.img bs=1K count=1440`
+
+`sudo losetup -fP floppy_144.img`
+
+`sudo mkfs.fat -F 12 /dev/loop0`
+
+`mkdir ./fdd`
+
+`sudo mount -o loop ./fdd  /dev/loop0`
+
+`<copy files>`
+
+`sudo umount ./fdd`
+
+`sudo losetup -d /dev/loop0`
+
+### Other
+
+Remove loopback device (put your device name in place of loop0):
+`sudo losetup -d /dev/loop0`
+
+To create a ext4/3/2 filesystem, use:
+
+`sudo mkfs.ext4 /dev/loop0p2`
+
+`sudo mkfs.ext3 /dev/loop0p3`
+
+`sudo mkfs.ext2 /dev/loop0p5`
+
+
+To create NTFS or exFAT: 
+
+`sudo mkfs.ntfs /dev/loop0p10`
+
+`sudo mkfs.exfat /dev/loop0p10`
+
+To check the properties of the mounted loopback partition:
+
+`df -hP  ~/virtual_disk1`
+
+## Windows
+
+Under MS Windows, free (as a beer) [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html) can be used to mount single-partition and multi-partition images.
+
+Other imaging tools used during the tests were famous [WinImage](https://www.winimage.com/) and less known, but free (as a beer), DiskExplorer by junnno (no known site, can be downloaded [here](https://vetusware.com/download/Disk%20Explorer%201.69E/?id=16440)).
+
 
 Problems and limitations
 ========================
