@@ -11,14 +11,17 @@ Supports: FAT12, FAT16, FAT32, VFAT.
 Supports DOS 1.xx images without BPB. Support is based on the media descriptor in the FAT table and image size. Added several exceptions 
 for the popular quirks of historical disk images from the retro sites.
 
+Supports MBR-based partitions. Volumes with unknown filesystems are shown as such.
+
 The plugin supports searching for the boot sector in the image. This is intended to help open images containing some metadata at 
 the beginning, added by imaging tools. WinImage demonstrates the same behavior. Though the partitioned disks are not yet supported, 
 this feature allows the opening of the first FAT partition on partitioned disk images. 
 The boot sector for this search is determined by the following pattern of size 512 bytes exactly: 
 
-`0xB8, 0xx, 0x90, 0xx ... 0xx, 0x55, 0xAA,`
+`0xB8, 0xx, 0x90, 0xx ... 0xx, 0x55, 0xAA`
 
 where 0xx means any byte. The search range currently is equal to 64kb.
+
 
 Installation
 ============
@@ -45,16 +48,23 @@ This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
 
+Plugin configuration
+====================
+
+Configuration file, named fatdiskimg.ini, is searched at the path, provided by the TCmd (most often -- the path where wincmd.ini is located). If configuration file is absent or incorrect it is created with the default configuration.
+
 Compilation
 ===========
 
-Code can be compiled using the Visual Studio project or CMakeLists.txt (tested using MSVC and MinGW). Uses C++20, with no external dependencies.
+Code can be compiled using the Visual Studio project or CMakeLists.txt (tested using MSVC and MinGW). Uses C++20, with no obligatory external dependencies. 
+
+As an experimental and optional feature, [FLTK](https://www.fltk.org/) is used to create dialogs and a logging window. 
 
 Problems and limitations
 ========================
 * Read-only
-* Support for the exFAT not planned (yet) 
-* No GPT support (yet)
+* Does not support exFAT 
+* No GPT support 
 * No support for Unicode, ASCII only
 * No support for the 8" images, including 86-DOS images
 * Directories data, time, and some attributes are not set properly
