@@ -38,7 +38,7 @@ struct plugin_config_t {
 	static constexpr int GUI_MSG      = 2;
 	int debug_level = NO_DEBUG;
 	//------------------------------------------------------------
-	bool read_conf (const PackDefaultParamStruct* dps);
+	bool read_conf (const PackDefaultParamStruct* dps, bool reread);
 	bool write_conf();
 
 private:

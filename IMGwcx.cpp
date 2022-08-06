@@ -35,6 +35,7 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
 #include <FL/Fl_Box.H>
+#include <FL/fl_ask.H>
 #endif
 
 using std::nothrow, std::uint8_t;
@@ -344,12 +345,30 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 		debug_print("Error: Wrong boot signature: {:#04x}", bootsec.signature);
 		if (!plugin_config.ignore_boot_signature) {
 			if (plugin_config.allow_dialogs) {
+#ifdef FLTK_ENABLED_EXPERIMENTAL
 				if (get_openmode() == PK_OM_LIST) {
-					int res = whole_disk_ptr->on_bad_BPB_callback(this);
-					if (res != 0) {
-						return res;
+					auto res = fl_choice("Wrong boot signature: %04x", "Stop", "OK", "Try MBR", bootsec.signature);
+
+					//! Conf would be re-read for the new image
+					switch (res) {
+					case 0: // Left btn -- Stop 
+						plugin_config.process_DOS1xx_images = false;
+						plugin_config.search_for_boot_sector = false;
+						plugin_config.process_MBR = false;
+						return E_BAD_ARCHIVE;
+						break;
+					case 1: // Middle btn -- OK (default)
+						break;
+					case 2: // Right button -- Try MBR (only -- skip DOS1.xx and do not search for bootsector)
+						plugin_config.process_DOS1xx_images = false;
+						plugin_config.search_for_boot_sector = false;
+						return E_BAD_ARCHIVE;
+						break;
+					default:;
 					}
+					// int res = whole_disk_ptr->on_bad_BPB_callback(this);
 				}
+#endif 
 			}
 			else {
 				return E_BAD_ARCHIVE;
@@ -1109,8 +1128,10 @@ int whole_disk_t::process_volumes() {
 
 	// No partitions -- attempt to find boot sector
 	if (err_code != 0) {
-		if (disks[0].search_for_bootsector() == 0) {
-			err_code = disks[0].process_bootsector(true);
+		if (plugin_config.search_for_boot_sector) {
+			if (disks[0].search_for_bootsector() == 0) {
+				err_code = disks[0].process_bootsector(true);
+			}
 		}
 	}
 
@@ -1122,6 +1143,8 @@ extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
+		auto rdconf = plugin_config.read_conf(nullptr, true); // Reread confuguration
+
 		std::unique_ptr<whole_disk_t> arch; // TCmd API expects HANDLE/raw pointer,
 										// so smart pointer is used to manage cleanup on errors 
 										// only inside this function
@@ -1315,7 +1338,7 @@ extern "C" {
 	// This function is new in version 2.1. 
 	// It requires Total Commander >=5.51, but is ignored by older versions.
 	DLLEXPORT void STDCALL PackSetDefaultParams(PackDefaultParamStruct* dps) { //-V2009
-		auto res = plugin_config.read_conf(dps);
+		auto res = plugin_config.read_conf(dps, false);
 		if (!res) { // Create default configuration if conf file is absent
 			plugin_config.write_conf();
 		}

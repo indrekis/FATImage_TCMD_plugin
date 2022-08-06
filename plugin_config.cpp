@@ -79,19 +79,20 @@ T plugin_config_t::get_option_from_map(const std::string& option_name) const {
 }
 
 
-bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps)
+bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
 {
     using namespace std::literals::string_literals; 
+    if (!reread) {
+        config_file_path.push_back(dps->DefaultIniName);
+        auto slash_idx = config_file_path.find_last(get_path_separator());
+        if (slash_idx == config_file_path.npos)
+            slash_idx = 0;
+        config_file_path.shrink_to(slash_idx);
+        config_file_path.push_back(inifilename);
 
-    config_file_path.push_back(dps->DefaultIniName);
-    auto slash_idx = config_file_path.find_last(get_path_separator());
-    if (slash_idx == config_file_path.npos)
-        slash_idx = 0;
-    config_file_path.shrink_to(slash_idx);
-    config_file_path.push_back(inifilename);
-
-    plugin_interface_version_hi = dps->PluginInterfaceVersionHi;
-    plugin_interface_version_lo = dps->PluginInterfaceVersionLow;
+        plugin_interface_version_hi = dps->PluginInterfaceVersionHi;
+        plugin_interface_version_lo = dps->PluginInterfaceVersionLow;
+    }
 
     std::ifstream cf{ config_file_path.data() };
     if (!cf.is_open()) {
