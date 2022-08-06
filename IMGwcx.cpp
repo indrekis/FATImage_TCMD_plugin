@@ -336,15 +336,23 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 	}
 	// if read_bootsec == false -- user preread bootsector
 
-	if (bootsec.BPB_bytesPerSec != get_sector_size()) {
+	if (bootsec.BPB_bytesPerSec != get_sector_size()) { 
 		return E_UNKNOWN_FORMAT;
 	}
 
-	if (bootsec.signature != 0xAA55 && !plugin_config.ignore_boot_signature) {
-		if (get_openmode() == PK_OM_LIST) {
-			int res = whole_disk_ptr->on_bad_BPB_callback(this);
-			if (res != 0) {
-				return res;
+	if (bootsec.signature != 0xAA55) {
+		debug_print("Error: Wrong boot signature: {:#04x}", bootsec.signature);
+		if (!plugin_config.ignore_boot_signature) {
+			if (plugin_config.allow_dialogs) {
+				if (get_openmode() == PK_OM_LIST) {
+					int res = whole_disk_ptr->on_bad_BPB_callback(this);
+					if (res != 0) {
+						return res;
+					}
+				}
+			}
+			else {
+				return E_BAD_ARCHIVE;
 			}
 		}
 	}
@@ -1084,7 +1092,6 @@ int whole_disk_t::process_volumes() {
 					err_code = disks.back().process_bootsector(true);
 					if (err_code) {
 						// Unknown partition
-						// disks.pop_back();
 					}
 				}
 				if (disks.empty() || (first_err_code != 0 && disks.size() == 1)) {
@@ -1100,10 +1107,6 @@ int whole_disk_t::process_volumes() {
 		}
 	}
 
-//	if (err_code == 0 && first_err_code) {
-		// We have some partitions but first partition is not known
-//		disks.erase(disks.begin());
-//	}
 	// No partitions -- attempt to find boot sector
 	if (err_code != 0) {
 		if (disks[0].search_for_bootsector() == 0) {
@@ -1148,23 +1151,25 @@ extern "C" {
 
 		int loaded_FATs = 0;
 		size_t loaded_catalogs = 0;
-		for (size_t i = 0; i < arch->disks.size(); ++i) {
-			if ( !arch->disks[i].is_known_FS_type() )
-				continue;
-			err_code = arch->disks[i].load_FAT();
-			if (err_code != 0 && loaded_FATs == 0) { // Saving the first error
-				ArchiveData->OpenResult = err_code;
-				// arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
-			}
-			else {
-				++loaded_FATs;
-				err_code = arch->disks[i].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
-				if (err_code != 0 && loaded_catalogs == 0) { // Saving the first error
+		if (err_code == 0) {
+			for (size_t i = 0; i < arch->disks.size(); ++i) {
+				if (!arch->disks[i].is_known_FS_type())
+					continue;
+				err_code = arch->disks[i].load_FAT();
+				if (err_code != 0 && loaded_FATs == 0) { // Saving the first error
 					ArchiveData->OpenResult = err_code;
 					// arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
 				}
 				else {
-					++loaded_catalogs;
+					++loaded_FATs;
+					err_code = arch->disks[i].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
+					if (err_code != 0 && loaded_catalogs == 0) { // Saving the first error
+						ArchiveData->OpenResult = err_code;
+						// arch->disks.erase(arch->disks.begin() + loaded_catalogs); // TODO: Test! 
+					}
+					else {
+						++loaded_catalogs;
+					}
 				}
 			}
 		}
@@ -1174,6 +1179,7 @@ extern "C" {
 			return arch.release(); // Returns raw ptr and releases ownership 
 		}
 		else {
+			ArchiveData->OpenResult = err_code; 
 			return nullptr;
 		}
 	}
@@ -1195,7 +1201,10 @@ extern "C" {
 		auto& current_disk = hArcData->disks[hArcData->disc_counter];
 		strcpy(HeaderData->ArcName, hArcData->archname.data());
 		if (hArcData->disks.size() == 1) {
-			strcpy(HeaderData->FileName, current_disk.arc_dir_entries[current_disk.counter].PathName.data());
+			if(!current_disk.arc_dir_entries.empty())
+				strcpy(HeaderData->FileName, current_disk.arc_dir_entries[current_disk.counter].PathName.data());
+			else 
+				return E_END_ARCHIVE;
 		}
 		else {			
 			auto disk_name = hArcData->get_disk_prefix(hArcData->disc_counter); // Case of empty or unknown partitions

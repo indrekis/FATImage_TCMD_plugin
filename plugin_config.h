@@ -20,7 +20,10 @@ struct plugin_config_t {
 	minimal_fixed_string_t<MAX_PATH> config_file_path;
 	uint32_t plugin_interface_version_lo = 0;
 	uint32_t plugin_interface_version_hi = 0;
-	bool ignore_boot_signature = false;
+	bool ignore_boot_signature = false;	   // Some historical floppy images contain correct BPB but do not have 0x55AA signature
+										   // Examples are Norton Utilities 2.00 and 2.01; CheckIt Pro v1.11 (3.5-1.44mb)	
+	bool allow_dialogs = true;
+	bool allow_GUI_log = true;
 	bool use_VFAT = true;
 	bool process_DOS1xx_images = true;
 	bool process_MBR = true;

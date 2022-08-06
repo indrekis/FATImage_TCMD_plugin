@@ -107,6 +107,8 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps)
         process_DOS1xx_exceptions = get_option_from_map<decltype(process_DOS1xx_exceptions)>("process_DOS1xx_exceptions"s);
         search_for_boot_sector = get_option_from_map<decltype(search_for_boot_sector)>("search_for_boot_sector"s);
         search_for_boot_sector_range = get_option_from_map<decltype(search_for_boot_sector_range)>("search_for_boot_sector_range"s);
+        allow_dialogs = get_option_from_map<decltype(allow_dialogs)>("allow_dialogs"s);
+        allow_GUI_log = get_option_from_map<decltype(allow_GUI_log)>("allow_GUI_log"s);
         debug_level = get_option_from_map<decltype(debug_level)>("debug_level"s);
     }
     catch (std::exception&) {
@@ -143,6 +145,8 @@ bool plugin_config_t::write_conf()
     cf << "# search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA\n";
     cf << "search_for_boot_sector=" << search_for_boot_sector << '\n';
     cf << "search_for_boot_sector_range=" << search_for_boot_sector_range << '\n'; //-V128
+    cf << "allow_dialogs=" << allow_dialogs << '\n'; 
+    cf << "allow_GUI_log=" << allow_GUI_log << '\n'; 
     cf << "debug_level=" << debug_level << '\n'; 
     cf << '\n';
     return true;

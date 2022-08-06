@@ -30,7 +30,7 @@ int winAPI_msgbox_on_bad_BPB(void*) {
 		0
 	);
 	if (msgboxID == IDCANCEL) {
-		return E_UNKNOWN_FORMAT;
+		return E_BAD_ARCHIVE;
 	}
 	else {
 		return 0;
