@@ -9,6 +9,8 @@
 #include <bit>
 #include <memory>
 
+#include "sysio_winapi.h"
+
 //! https://wiki.osdev.org/FAT#BPB_.28BIOS_Parameter_Block.29
 //! FAT is little endian.
 // BPB = BIOS Parameter Block
@@ -376,6 +378,7 @@ struct VFAT_LFN_dir_entry_t
 	static constexpr size_t LFN_name_part1_size = sizeof(LFN_name_part1) / sizeof(LFN_name_part1[0]);
 	static constexpr size_t LFN_name_part2_size = sizeof(LFN_name_part2) / sizeof(LFN_name_part2[0]);
 	static constexpr size_t LFN_name_part3_size = sizeof(LFN_name_part3) / sizeof(LFN_name_part3[0]);
+	static constexpr size_t LFN_name_part_size = LFN_name_part1_size + LFN_name_part2_size + LFN_name_part3_size;
 
 	static uint8_t LFN_checksum(const char* DIR_Name)
 	{
@@ -404,28 +407,35 @@ struct VFAT_LFN_dir_entry_t
 			strchr(non_valid_chars_LFN, mychar) == nullptr;
 	}
 
-	//! TODO: Add Unicode support
 	//! TODO: no space character at the start or end, and no period at the end.
 	template<typename T>
 	uint32_t dir_LFN_entry_to_ASCII_str(T& name) {
-#define UNCOPYMACRO(LFN_name_part, LFN_name_part_size) \
-		for (int i = 0; i < LFN_name_part_size; ++i) { \
-			if (LFN_name_part[i] == 0) { \
-				return 0; \
-			} \
-			if (LFN_name_part[i] == 0xFFFF) { \
-				return 1; \
-			} \
-			char tc = static_cast<char>(LFN_name_part[i]); \
-			if (!is_valid_char_LFN(tc)) { \
-				return 1; \
-			} \
-			name.push_back(tc); \
-		} 
-		UNCOPYMACRO(LFN_name_part1, LFN_name_part1_size);
-		UNCOPYMACRO(LFN_name_part2, LFN_name_part2_size);
-		UNCOPYMACRO(LFN_name_part3, LFN_name_part3_size);
-		return 0;
+		wchar_t ucs16_record[LFN_name_part_size] = { 0 };
+		char    local_record[LFN_name_part_size + 1] = { 0 };
+		uint32_t idx = 0;
+		for (uint32_t i = 0; i < LFN_name_part1_size; ++i, ++idx)
+			ucs16_record[idx] = LFN_name_part1[i];
+		for (uint32_t i = 0; i < LFN_name_part2_size; ++i, ++idx)
+			ucs16_record[idx] = LFN_name_part2[i];
+		for (uint32_t i = 0; i < LFN_name_part3_size; ++i, ++idx)
+			ucs16_record[idx] = LFN_name_part3[i];
+		idx = 0;
+		int wrong_symbol = 0;
+		for (idx = 0; idx < LFN_name_part_size; ++idx) {
+			if (ucs16_record[idx] == 0)
+				break;
+			if (ucs16_record[idx] == 0xFFFF) {
+				wrong_symbol = 1;
+				break;
+			}		
+		}
+		auto res = ucs16_to_local(local_record, ucs16_record, idx);
+		if (res != 0)
+			return res;
+		else {
+			name.push_back(local_record);
+			return wrong_symbol;
+		}
 	}
 
 #undef UNCOPYMACRO
@@ -594,6 +604,8 @@ static_assert(sizeof(MBR_t) == 512, "Wrong size of MBR_t");
 // 1. XDF images seem to be interpreted correctly. Additionally: http://www.os2museum.com/wp/the-xdf-diskette-format/
 // 2. http://ucsd-psystem-fs.sourceforge.net/ http://ucsd-psystem-fs.sourceforge.net/ucsd-psystem-fs-1.22.pdf 
 // 3. CP/M FS formats: https://www.seasip.info/Cpm/formats.html
+//    https://forums.debian.net//viewtopic.php?f=16&t=112244 -- cpmtools howto 
+//    https://github.com/lipro-cpm4l/cpmtools
 // 4. 86-DOS FAT variants: https://en.wikipedia.org/wiki/86-DOS#Formats
 // 5. UMSDOS: --LINUX-.--- files format: https://gist.github.com/chungy/7852622, http://linux.voyager.hr/umsdos/
 // 6. OS/2 Extended attributes for FAT: http://www.tavi.co.uk/os2pages/eadata.html -- some info about EA on-disk format, 
@@ -603,6 +615,7 @@ static_assert(sizeof(MBR_t) == 512, "Wrong size of MBR_t");
 //    http://www.edm2.com/index.php/Encapsulating_Extended_Attributes_-_Part_1/2
 //    http://www.edm2.com/index.php/Encapsulating_Extended_Attributes_-_Part_2/2
 // 7. http://www.emuverse.ru/wiki/Teledisk , https://hwiegman.home.xs4all.nl/fileformats/teledisk/wteledsk.htm
+// 8. https://github.com/lipro-cpm4l/libdsk -- велика бібліотека для роботи із різними образами
 // 
 // See also https://github.com/aaru-dps/Aaru -- Aaru Data Preservation Suite
 #endif 

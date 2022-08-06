@@ -135,3 +135,25 @@ uint32_t get_current_datetime()
 	FileTimeToDosDateTime(&ft, dft+1, dft);
 	return (static_cast<uint32_t>(dft[1]) << 16) + dft[0];
 }
+
+char simple_ucs16_to_local(wchar_t wc) {
+	char tc = '\0';
+	WideCharToMultiByte(CP_ACP, 0, &wc, -1, &tc, 1, NULL, NULL); 
+	return tc;
+}
+
+int ucs16_to_local(char* outstr, const wchar_t* instr, size_t maxoutlen) {
+	if (instr != nullptr) {
+		// CP_ACP The system default Windows ANSI code page.
+		// TODO: error analysis
+		int res = WideCharToMultiByte(CP_ACP, 0, instr, static_cast<int>(maxoutlen), 
+			                          outstr, static_cast<int>(maxoutlen), NULL, NULL);
+		if (res != 0)
+			return 0;
+		else
+			return GetLastError();
+	}
+	else {
+		return 1;
+	}
+}

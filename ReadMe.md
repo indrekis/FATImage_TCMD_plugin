@@ -8,6 +8,8 @@ IMG Plugin for Total Commander (TCmd) by IvGzury was used as a starting point be
 
 Supports: FAT12, FAT16, FAT32, VFAT.
 
+Partial Unicode support for the FAT32 -- UCS-16 symbols in LFNs are converted to the local codepage.
+
 Supports DOS 1.xx images without BPB. Support is based on the media descriptor in the FAT table and image size. Added several exceptions 
 for the popular quirks of historical disk images from the retro sites.
 
@@ -52,6 +54,8 @@ Plugin configuration
 ====================
 
 Configuration file, named fatdiskimg.ini, is searched at the path, provided by the TCmd (most often -- the path where wincmd.ini is located). If configuration file is absent or incorrect it is created with the default configuration.
+
+In addition to using a full-fledged debugger, debugging output can be seen, using [SimpleProgramDebugger](http://www.nirsoft.net/utils/simple_program_debugger.html).
 
 Compilation
 ===========
@@ -178,8 +182,9 @@ Problems and limitations
 * Read-only
 * Does not support exFAT 
 * No GPT support 
-* No support for Unicode, ASCII only
-* No support for the 8" images, including 86-DOS images
+* Partial support of Unicode in filenames, code implements only ANSI functions as for now.
+  * As a result, the path is limited to 260-1 symbols max.
+* No support for the 8" images, including 86-DOS and CP/M images
 * Directories data, time, and some attributes are not set properly
 * Not yet tested on large (close to 2Tb) images.
 

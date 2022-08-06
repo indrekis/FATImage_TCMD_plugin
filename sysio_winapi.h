@@ -8,6 +8,10 @@
 #include <windows.h>
 #include <cstdint>
 
+#ifndef NDEBUG
+#include <format>
+#endif 
+
 const auto file_open_error_v = INVALID_HANDLE_VALUE;
 using file_handle_t = HANDLE;
 
@@ -28,6 +32,26 @@ size_t get_file_size(file_handle_t handle);
 inline char get_path_separator() { return '\\'; }
 
 uint32_t get_current_datetime();
+
+//! Very basic, simplistic, function
+char simple_ucs16_to_local(wchar_t wc);
+//! More advenced:
+int ucs16_to_local(char* outstr, const wchar_t* instr, size_t maxoutlen);
+
+template<typename... Args>
+void debug_print(const char* format, Args&&... args) {
+#ifndef NDEBUG
+    try {
+        std::string strbuf = std::vformat(format, std::make_format_args(std::forward<Args...>(args)...));
+        OutputDebugString(strbuf.c_str()); // Sends a string to the debugger
+    }
+    catch (std::exception& ex) {
+        OutputDebugString(ex.what()); 
+    }
+    // See also http://www.nirsoft.net/utils/simple_program_debugger.html
+#endif // !NDEBUG
+}
+
 #endif 
 
 
