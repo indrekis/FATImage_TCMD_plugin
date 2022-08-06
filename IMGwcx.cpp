@@ -14,7 +14,6 @@
 */
 
 #include "sysio_winapi.h"
-#include "sysui_winapi.h"
 #include "minimal_fixed_string.h"
 #include "FAT_definitions.h"
 #include "plugin_config.h"
@@ -81,8 +80,6 @@ struct arc_dir_entry_t
 };
 
 plugin_config_t plugin_config; 
-
-using on_bad_BPB_callback_t = int(*)(void*);
 
 //! Contains archive configuration, so FAT_image_t needs it
 struct whole_disk_t; 
@@ -256,13 +253,11 @@ struct whole_disk_t {
 	int openmode_m = PK_OM_LIST;
 	size_t image_file_size = 0;	
 
-	on_bad_BPB_callback_t on_bad_BPB_callback = nullptr;
-
 	tChangeVolProc   pLocChangeVol = nullptr;
 	tProcessDataProc pLocProcessData = nullptr;
 
-	whole_disk_t(on_bad_BPB_callback_t clb, const char* archname_in, size_t vol_size, file_handle_t fh, int openmode):
-		hArchFile{ fh }, openmode_m(openmode), image_file_size(vol_size), on_bad_BPB_callback(clb)
+	whole_disk_t(const char* archname_in, size_t vol_size, file_handle_t fh, int openmode):
+		hArchFile{ fh }, openmode_m(openmode), image_file_size(vol_size)
 	{
 		archname.push_back(archname_in);
 		// First disk represents also non-partitioned image -- so, initially, it's size = whole image size.
@@ -1162,7 +1157,7 @@ extern "C" {
 			return nullptr;
 		}
 		try {
-			arch = std::make_unique<whole_disk_t>(winAPI_msgbox_on_bad_BPB, ArchiveData->ArcName, image_file_size,
+			arch = std::make_unique<whole_disk_t>( ArchiveData->ArcName, image_file_size,
 				hArchFile, ArchiveData->OpenMode);
 		}
 		catch (std::bad_alloc&) {
@@ -1358,7 +1353,7 @@ extern "C" {
 			return 0;
 		}
 		// Caching results here would complicate code too much as for now
-		whole_disk_t arch{ winAPI_msgbox_on_bad_BPB, FileName, image_file_size,
+		whole_disk_t arch{ FileName, image_file_size,
 				hArchFile, PK_OM_LIST };
 
 		auto err_code = arch.process_volumes();

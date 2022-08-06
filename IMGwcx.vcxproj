@@ -282,7 +282,6 @@
     <ClCompile Include="plugin_config.cpp" />
     <ClCompile Include="string_tools.cpp" />
     <ClCompile Include="sysio_winapi.cpp" />
-    <ClCompile Include="sysui_winapi.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FAT_definitions.h" />
@@ -290,7 +289,6 @@
     <ClInclude Include="plugin_config.h" />
     <ClInclude Include="string_tools.h" />
     <ClInclude Include="sysio_winapi.h" />
-    <ClInclude Include="sysui_winapi.h" />
     <ClInclude Include="wcxhead.h" />
   </ItemGroup>
   <ItemGroup>
