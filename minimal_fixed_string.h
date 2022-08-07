@@ -8,9 +8,10 @@
 
 template<size_t N>
 class minimal_fixed_string_t {
-	std::array<char, N> data_m = { '\0' };
+	std::array<char, N> data_m = { '\0' }; // Should always be a C-string -- with '\0'
 	size_t size_m = 0;
 public:
+	static const size_t npos = -1;
 	minimal_fixed_string_t() = default;
 	minimal_fixed_string_t(const minimal_fixed_string_t&) = default;
 	minimal_fixed_string_t(const char* str) {
@@ -46,6 +47,25 @@ public:
 		size_m = 0;
 		data_m[size_m] = '\0';
 	}
-};
+	void shrink_to(size_t new_size) {
+		if (new_size > size_m)
+			return;
+		size_m = new_size;
+		data_m[size_m] = '\0';
+	}
+	void pop_back() {
+		if (size_m  == 0)
+			return;
+		--size_m;
+		data_m[size_m] = '\0';
+	}
+	size_t find_last(char c) const {
+		const char* last = strrchr(data(), c);
+		if (last == nullptr)
+			return npos;
+		else
+			return last - data();
+	}
+}; 
 
 #endif 

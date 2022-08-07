@@ -22,7 +22,7 @@ file_handle_t open_file_shared_read(const char* filename) {
 
 file_handle_t open_file_write(const char* filename) {
 	file_handle_t handle;
-	handle = CreateFile(filename, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
+	handle = CreateFile(filename, GENERIC_WRITE | FILE_APPEND_DATA, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
 	return handle;
 }
 
@@ -35,6 +35,10 @@ file_handle_t open_file_overwrite(const char* filename) {
 //! Returns true if success
 bool close_file(file_handle_t handle) {
 	return CloseHandle(handle);
+}
+
+bool flush_file(file_handle_t handle) {
+	return FlushFileBuffers(handle);
 }
 
 bool delete_file(const char* filename) {
@@ -123,4 +127,37 @@ size_t get_file_size(file_handle_t handle)
 		return -1;
 
 	return size.QuadPart;
+}
+
+uint32_t get_current_datetime()
+{
+	SYSTEMTIME t = {0};
+	FILETIME   ft = { 0 };
+	uint16_t  dft[2] = { 0 };
+	GetSystemTime(&t);
+	SystemTimeToFileTime(&t, &ft);
+	FileTimeToDosDateTime(&ft, dft+1, dft);
+	return (static_cast<uint32_t>(dft[1]) << 16) + dft[0];
+}
+
+char simple_ucs16_to_local(wchar_t wc) {
+	char tc = '\0';
+	WideCharToMultiByte(CP_ACP, 0, &wc, -1, &tc, 1, NULL, NULL); 
+	return tc;
+}
+
+int ucs16_to_local(char* outstr, const wchar_t* instr, size_t maxoutlen) {
+	if (instr != nullptr) {
+		// CP_ACP The system default Windows ANSI code page.
+		// TODO: error analysis
+		int res = WideCharToMultiByte(CP_ACP, 0, instr, static_cast<int>(maxoutlen), 
+			                          outstr, static_cast<int>(maxoutlen), NULL, NULL);
+		if (res != 0)
+			return 0;
+		else
+			return GetLastError();
+	}
+	else {
+		return 1;
+	}
 }

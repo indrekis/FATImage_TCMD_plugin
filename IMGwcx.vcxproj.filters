@@ -21,10 +21,13 @@
     <ClCompile Include="sysio_winapi.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="sysui_winapi.cpp">
+    <ClCompile Include="FAT_definitions.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="FAT_definitions.cpp">
+    <ClCompile Include="string_tools.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="plugin_config.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -35,13 +38,16 @@
     <ClInclude Include="sysio_winapi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="sysui_winapi.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="minimal_fixed_string.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="FAT_definitions.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="string_tools.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="plugin_config.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

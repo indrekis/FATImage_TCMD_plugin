@@ -9,6 +9,8 @@
 #include <bit>
 #include <memory>
 
+#include "sysio_winapi.h"
+
 //! https://wiki.osdev.org/FAT#BPB_.28BIOS_Parameter_Block.29
 //! FAT is little endian.
 // BPB = BIOS Parameter Block
@@ -79,6 +81,14 @@ struct EBPB_FAT32_t {
 	}
 	uint32_t get_active_FAT() const {
 		return BS_ExtFlags & 0x0F;
+	}
+	void get_volume_label(char* vol) {
+		size_t idx = 0;
+		while (idx < sizeof(BS_VolLab) && BS_VolLab[idx] != ' ') {
+			vol[idx] = BS_VolLab[idx];
+			++idx;
+		}
+		vol[idx] = '\0';
 	}
 }; // 0x3E = 62
 
@@ -238,7 +248,7 @@ struct FATxx_dir_entry_t
 	}
 
 	bool is_dir_record_deleted() const {
-		return (DIR_Name[0] == '\xE5') || (DIR_Name[0] == '\x05');
+		return (DIR_Name[0] == '\xE5');
 	}
 
 	bool is_dir_record_unknown() const {
@@ -277,7 +287,9 @@ struct FATxx_dir_entry_t
 
 	//! Returns number of invalid chars
 	template<typename T>
-	uint32_t dir_entry_name_to_str(T& name);
+	uint32_t dir_entry_name_to_str(T& name, bool process_OS2_EA_file = true);
+
+	bool process_E5();
 
 	uint32_t get_first_cluster_FAT12() const {
 		return DIR_FstClusLO;
@@ -300,30 +312,55 @@ struct FATxx_dir_entry_t
 		return !((mychar >= '\x00') && (mychar <= '\x20')) &&
 			strchr(non_valid_chars, mychar) == nullptr;
 	}
+
+	static constexpr char OS2_EA_file_entry[] = "EA DATA  SF";
+	static constexpr char OS2_EA_file_name[] = "EA DATA. SF";
+	static_assert(sizeof(OS2_EA_file_entry) == 11 + 1, "Wrong OS2_EA_file size");
+	static_assert(sizeof(OS2_EA_file_name) == 11 + 1, "Wrong OS2_EA_file_name size");
+	enum ll_dir_entry_props{ LLDE_OK = 0, LLDE_badinname = 1, LLDE_badinext = 2, LLDE_OS2_EA = 0xFFFF};
 };
 
+inline bool FATxx_dir_entry_t::process_E5() {
+	// 0x05 is used as a placeholder for the symbol 0xE5 (which is used as deleted marker)
+	// But it should be replaced after the test for deletion.
+	// See also https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#DIR_OFS_00h
+	if (DIR_Name[0] == '\x05') {
+		DIR_Name[0] = '\xE5';
+		return false;
+	}
+	else {
+		return true;
+	}
+}
+
 template<typename T>
-uint32_t FATxx_dir_entry_t::dir_entry_name_to_str(T& name) {
-	// if (DIR_Name[0] == char(0x05)) FileName[i++] = char(0xE5); // because 0xE5 used in Japan
+uint32_t FATxx_dir_entry_t::dir_entry_name_to_str(T& name, bool process_OS2_EA_file) {
 	uint32_t invalid = 0;
 
-	for (int i = 0; i < 8; ++i) {
-		if (!is_valid_char(DIR_Name[i])) {
-			if (DIR_Name[i] != ' ') ++invalid;
-			break;
-		}
-		name.push_back(DIR_Name[i]);
+	auto ea_os2_found = memcmp(&DIR_Name[0], OS2_EA_file_entry, 11);
+	if (ea_os2_found == 0) {
+		name.push_back(OS2_EA_file_name);
+		return LLDE_OS2_EA;
 	}
-	if (is_valid_char(DIR_Name[8]))
-	{
-		name.push_back('.');
-	}
-	for (int i = 8; i < 8 + 3; ++i) {
-		if (!is_valid_char(DIR_Name[i])) {
-			if (DIR_Name[i] != ' ') ++invalid;
-			break;
+	else {
+		for (int i = 0; i < 8; ++i) {
+			if (!is_valid_char(DIR_Name[i])) {
+				if (DIR_Name[i] != ' ') ++invalid;
+				break;
+			}
+			name.push_back(DIR_Name[i]);
 		}
-		name.push_back(DIR_Name[i]);
+		if (is_valid_char(DIR_Name[8]))
+		{
+			name.push_back('.');
+		}
+		for (int i = 8; i < 8 + 3; ++i) {
+			if (!is_valid_char(DIR_Name[i])) {
+				if (DIR_Name[i] != ' ') ++invalid;
+				break;
+			}
+			name.push_back(DIR_Name[i]);
+		}
 	}
 	return invalid;
 }
@@ -349,6 +386,7 @@ struct VFAT_LFN_dir_entry_t
 	static constexpr size_t LFN_name_part1_size = sizeof(LFN_name_part1) / sizeof(LFN_name_part1[0]);
 	static constexpr size_t LFN_name_part2_size = sizeof(LFN_name_part2) / sizeof(LFN_name_part2[0]);
 	static constexpr size_t LFN_name_part3_size = sizeof(LFN_name_part3) / sizeof(LFN_name_part3[0]);
+	static constexpr size_t LFN_name_part_size = LFN_name_part1_size + LFN_name_part2_size + LFN_name_part3_size;
 
 	static uint8_t LFN_checksum(const char* DIR_Name)
 	{
@@ -377,28 +415,35 @@ struct VFAT_LFN_dir_entry_t
 			strchr(non_valid_chars_LFN, mychar) == nullptr;
 	}
 
-	//! TODO: Add Unicode support
 	//! TODO: no space character at the start or end, and no period at the end.
 	template<typename T>
-	uint32_t dir_LFN_entry_to_ASCII_str(T& name) {
-#define UNCOPYMACRO(LFN_name_part, LFN_name_part_size) \
-		for (int i = 0; i < LFN_name_part_size; ++i) { \
-			if (LFN_name_part[i] == 0) { \
-				return 0; \
-			} \
-			if (LFN_name_part[i] == 0xFFFF) { \
-				return 1; \
-			} \
-			char tc = static_cast<char>(LFN_name_part[i]); \
-			if (!is_valid_char_LFN(tc)) { \
-				return 1; \
-			} \
-			name.push_back(tc); \
-		} 
-		UNCOPYMACRO(LFN_name_part1, LFN_name_part1_size);
-		UNCOPYMACRO(LFN_name_part2, LFN_name_part2_size);
-		UNCOPYMACRO(LFN_name_part3, LFN_name_part3_size);
-		return 0;
+	uint32_t dir_LFN_entry_to_ASCII_str(T& name) const {
+		wchar_t ucs16_record[LFN_name_part_size] = { 0 };
+		char    local_record[LFN_name_part_size + 1] = { 0 };
+		uint32_t idx = 0;
+		for (uint32_t i = 0; i < LFN_name_part1_size; ++i, ++idx)
+			ucs16_record[idx] = LFN_name_part1[i];
+		for (uint32_t i = 0; i < LFN_name_part2_size; ++i, ++idx)
+			ucs16_record[idx] = LFN_name_part2[i];
+		for (uint32_t i = 0; i < LFN_name_part3_size; ++i, ++idx)
+			ucs16_record[idx] = LFN_name_part3[i];
+		idx = 0;
+		int wrong_symbol = 0;
+		for (idx = 0; idx < LFN_name_part_size; ++idx) {
+			if (ucs16_record[idx] == 0)
+				break;
+			if (ucs16_record[idx] == 0xFFFF) {
+				wrong_symbol = 1;
+				break;
+			}		
+		}
+		auto res = ucs16_to_local(local_record, ucs16_record, idx); //-V106
+		if (res != 0)
+			return res;
+		else {
+			name.push_back(local_record);
+			return wrong_symbol;
+		}
 	}
 
 #undef UNCOPYMACRO
@@ -408,26 +453,13 @@ struct VFAT_LFN_dir_entry_t
 inline VFAT_LFN_dir_entry_t* as_LFN_record(FATxx_dir_entry_t* dir_entry) {
 	return reinterpret_cast<VFAT_LFN_dir_entry_t*>(dir_entry); // In theory -- UB, but in practice -- should work.
 }
+
+inline const VFAT_LFN_dir_entry_t* as_LFN_record(const FATxx_dir_entry_t* dir_entry) {
+	return reinterpret_cast<const VFAT_LFN_dir_entry_t*>(dir_entry); // In theory -- UB, but in practice -- should work.
+}
 static_assert(sizeof(VFAT_LFN_dir_entry_t) == 32, "Wrong size of VFAT_LFN_dir_entry_t"); //-V112
 
-#pragma pack(push, 1)
-struct partition_entry_t {
-	uint8_t	 dist_status;		// 0x00; Bit 7 -- active (bootable), old MBR: 0x00 or 0x80 only, 
-								// modern (Plug and Play BIOS Specification and BIOS Boot Specification) can store
-								// bootable disk ID here, so only 0x01-0x7F values are invalid.
-	uint8_t  start_CHS[3];		// 0x01; CHS Address of the first absolute partition sector
-								//		 cccc cccc ccss ssss hhhh hhhh 
-								//		Sector:   1-63
-								//      Cylinder: 0-1023
-								//      Head:     0-255
-	uint8_t	 type;				// 0x04; Partition type
-	uint8_t  end_CHS[3];		// 0x05; CHS Address of the last absolute partition sector
-	uint32_t start_LBA;			// 0x08; LBA of first absolute sector in the partition, >0
-	uint32_t size_sectors;		// 0x0C; Number of sectors in partition
-};
-static_assert(sizeof(partition_entry_t) == 16, "Wrong size of partition_entry_t");
-#pragma pack(pop)
-
+//---------MBR----------------------------------------------
 inline uint32_t CHS_to_heads(const uint8_t* CHS) // 3 bytes
 {
 	return CHS[0];
@@ -444,14 +476,104 @@ inline uint32_t CHS_to_cylinders(const uint8_t* CHS) // 3 bytes
 }
 
 inline uint32_t CHS_to_LBA(const uint8_t* CHS, uint32_t max_heads, uint32_t max_sectors) {
-	auto sectors   = CHS_to_sectors(CHS);
-	auto heads     = CHS_to_heads(CHS);
+	auto sectors = CHS_to_sectors(CHS);
+	auto heads = CHS_to_heads(CHS);
 	auto cylinders = CHS_to_cylinders(CHS);
-	
+
 	return (cylinders * max_heads + heads) * max_sectors + sectors - 1;
 	// max_heads typically 16
 	// max_sectors typically 63
 }
+
+
+#pragma pack(push, 1)
+struct partition_entry_t {
+	uint8_t	 disk_status;		// 0x00; Bit 7 -- active (bootable), old MBR: 0x00 or 0x80 only, 
+								// modern (Plug and Play BIOS Specification and BIOS Boot Specification) can store
+								// bootable disk ID here, so only 0x01-0x7F values are invalid.
+	uint8_t  start_CHS[3];		// 0x01; CHS Address of the first absolute partition sector
+								//		 cccc cccc ccss ssss hhhh hhhh 
+								//		Sector:   1-63
+								//      Cylinder: 0-1023
+								//      Head:     0-255
+	uint8_t	 type;				// 0x04; Partition type
+	uint8_t  end_CHS[3];		// 0x05; CHS Address of the last absolute partition sector
+	uint32_t start_LBA;			// 0x08; LBA of first absolute sector in the partition, >0
+	uint32_t size_sectors;		// 0x0C; Number of sectors in partition
+
+	bool is_MBR_disk_status_OK() const {
+		if (disk_status >= 0x01 && disk_status <= 0x7F)
+			return false;
+		else
+			return true;
+	}
+	bool is_start_CHS_zero() const {
+		return start_CHS[0] == 0 && start_CHS[1] == 0 && start_CHS[2] == 0;
+	}
+	bool is_end_CHS_zero() const {
+		return end_CHS[0] == 0 && end_CHS[1] == 0 && end_CHS[2] == 0;
+	}
+	bool is_CHSs_zero() const {
+		return is_start_CHS_zero() && is_end_CHS_zero();
+	}
+	bool is_LBAs_zero() const {
+		return start_LBA == 0 && size_sectors == 0;
+	}
+	uint32_t get_first_sec_by_LBA() const {
+		return start_LBA;
+	}
+	uint32_t get_last_sec_by_LBA() const {
+		return start_LBA + size_sectors - 1;
+	}
+	uint32_t get_first_sec_by_CHS(uint32_t max_heads, uint32_t max_sectors) const {
+		return CHS_to_LBA(start_CHS, max_heads, max_sectors);
+	}
+	uint32_t get_last_sec_by_CHS(uint32_t max_heads, uint32_t max_sectors) const {
+		return CHS_to_LBA(end_CHS, max_heads, max_sectors);
+	}
+	bool is_total_zero() const { // Check for empty (unused) records 
+		return disk_status == 0 && type == 0 && is_CHSs_zero() && is_LBAs_zero();
+	}
+
+	//! Based on https://en.wikipedia.org/wiki/Partition_type
+	bool is_extended() const {
+		switch (type) {
+		case 0x05: // MS extended partition with CHS addressing
+			return true; 
+		case 0x0F: // MS extended partition with LBA addressing
+			return true; 
+		case 0x85: // Linux extended partition with CHS addressing
+			return true; 
+		case 0xC0:
+		case 0xC1:
+		case 0xC4:
+		case 0xC5:
+		case 0xC6:
+		case 0xCB: 
+		case 0xCC:
+		case 0xCE:
+		case 0xCF: // DR DOS Secured partitions. Not tested.
+			return true;
+		case 0xD0:
+		case 0xD1:
+		case 0xD4:
+		case 0xD5:
+		case 0xD6: // Novel Multiuser DOS partitions. Not tested.
+			return true;
+		case 0x1F: //  	OS/2 Boot Manager hidden extended partition with LBA
+			return true; 
+		case 0x91: // FreeDOS hidden extended partition with CHS 
+		case 0x9B: // FreeDOS hidden extended partition with LBA
+			return true;
+		default:
+			return false;
+		}
+	}
+};
+static_assert(sizeof(partition_entry_t) == 16, "Wrong size of partition_entry_t");
+#pragma pack(pop)
+
+
 
 #pragma pack(push, 1)
 struct MBR_t
@@ -469,16 +591,45 @@ struct MBR_t
 	uint16_t zero2;				// 0x01BC; Zero, can be 0x5A5A as a write-protected marker
 	partition_entry_t ptable[4];// 0x01BE; 0x01CE; 0x01DE; 0x01EE
 	uint16_t signature;         // 0x1FE; 0xAA55 (Little endian: signature[0] == 0x55, signature[1] == 0xAA)
+
+	static constexpr int ptables() { return sizeof(ptable)/sizeof(ptable[0]); }
+	bool is_correct_extended_record() const {
+		return ptable[2].is_total_zero() && ptable[3].is_total_zero();
+	}
+	bool has_next_extended_record() const {
+		return !ptable[1].is_total_zero();
+	}
 };
 static_assert(sizeof(MBR_t) == 512, "Wrong size of MBR_t"); 
 #pragma pack(pop)
 
-// See also: https://en.wikipedia.org/wiki/Filename#Comparison_of_filename_limitations
 
+
+//! Links: 
+//! https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system
+//! https://en.wikipedia.org/wiki/Master_boot_record
+//! https://en.wikipedia.org/wiki/Extended_boot_record
+//! https://wiki.osdev.org/ExFAT -- contains CRC calculations code 
+//! https://wiki.osdev.org/FAT
+//! See also: https://en.wikipedia.org/wiki/Filename#Comparison_of_filename_limitations
+//! 
 //! Interestin or important formats notes:
 // 1. XDF images seem to be interpreted correctly. Additionally: http://www.os2museum.com/wp/the-xdf-diskette-format/
 // 2. http://ucsd-psystem-fs.sourceforge.net/ http://ucsd-psystem-fs.sourceforge.net/ucsd-psystem-fs-1.22.pdf 
 // 3. CP/M FS formats: https://www.seasip.info/Cpm/formats.html
+//    https://forums.debian.net//viewtopic.php?f=16&t=112244 -- cpmtools howto 
+//    https://github.com/lipro-cpm4l/cpmtools
 // 4. 86-DOS FAT variants: https://en.wikipedia.org/wiki/86-DOS#Formats
+// 5. UMSDOS: --LINUX-.--- files format: https://gist.github.com/chungy/7852622, http://linux.voyager.hr/umsdos/
+// 6. OS/2 Extended attributes for FAT: http://www.tavi.co.uk/os2pages/eadata.html -- some info about EA on-disk format, 
+//	  API details:
+//	  http://www.naspa.net/magazine/1996/July/T9607014.PDF , 
+//	  http://www.edm2.com/index.php/Extended_Attributes_-_what_are_they_and_how_can_you_use_them_%3F
+//    http://www.edm2.com/index.php/Encapsulating_Extended_Attributes_-_Part_1/2
+//    http://www.edm2.com/index.php/Encapsulating_Extended_Attributes_-_Part_2/2
+// 7. http://www.emuverse.ru/wiki/Teledisk , https://hwiegman.home.xs4all.nl/fileformats/teledisk/wteledsk.htm
+// 8. https://github.com/lipro-cpm4l/libdsk -- велика бібліотека для роботи із різними образами
+// 
+// See also https://github.com/aaru-dps/Aaru -- Aaru Data Preservation Suite
 #endif 
 
