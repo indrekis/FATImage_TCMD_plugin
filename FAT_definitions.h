@@ -612,6 +612,7 @@ static_assert(sizeof(MBR_t) == 512, "Wrong size of MBR_t");
 //! https://wiki.osdev.org/ExFAT -- contains CRC calculations code 
 //! https://wiki.osdev.org/FAT
 //! See also: https://en.wikipedia.org/wiki/Filename#Comparison_of_filename_limitations
+//! 
 //! Interestin or important formats notes:
 // 1. XDF images seem to be interpreted correctly. Additionally: http://www.os2museum.com/wp/the-xdf-diskette-format/
 // 2. http://ucsd-psystem-fs.sourceforge.net/ http://ucsd-psystem-fs.sourceforge.net/ucsd-psystem-fs-1.22.pdf 

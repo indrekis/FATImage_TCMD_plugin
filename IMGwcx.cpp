@@ -518,6 +518,10 @@ int FAT_image_t::process_DOS1xx_image() {
 	//! Examples of 8" images: https://winworldpc.com/product/ms-dos/1x and	https://winworldpc.com/product/86-dos/100
 	//! https://en.wikipedia.org/wiki/Comparison_of_DOS_operating_systems -- 8" FDD for DOS 1.xx formats
 	//! DOS 1.10 boot sector: https://thestarman.pcministry.com/DOS/ibm110/Boot.htm
+	//! 
+	//! TODO: DOS 2.0 - DOS 3.2 sometimes wrote wrong BPB. For non DOS 1.xx images -- add check of the media ID
+	//!			http://www.os2museum.com/wp/dos-boot-sector-bpb-and-the-media-descriptor-byte/ -- describes possible heuristics 
+	//!			d
 	
 	uint8_t media_descr = 0;
 
