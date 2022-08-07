@@ -22,7 +22,7 @@ file_handle_t open_file_shared_read(const char* filename) {
 
 file_handle_t open_file_write(const char* filename) {
 	file_handle_t handle;
-	handle = CreateFile(filename, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
+	handle = CreateFile(filename, GENERIC_WRITE | FILE_APPEND_DATA, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
 	return handle;
 }
 
@@ -35,6 +35,10 @@ file_handle_t open_file_overwrite(const char* filename) {
 //! Returns true if success
 bool close_file(file_handle_t handle) {
 	return CloseHandle(handle);
+}
+
+bool flush_file(file_handle_t handle) {
+	return FlushFileBuffers(handle);
 }
 
 bool delete_file(const char* filename) {

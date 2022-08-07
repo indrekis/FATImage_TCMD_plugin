@@ -12,6 +12,7 @@
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
 #define NOMINMAX
 #include <windows.h>
+#include "sysio_winapi.h"
 #endif 
 #include "wcxhead.h"
 
@@ -24,6 +25,9 @@ struct plugin_config_t {
 										   // Examples are Norton Utilities 2.00 and 2.01; CheckIt Pro v1.11 (3.5-1.44mb)	
 	bool allow_dialogs = true;
 	bool allow_GUI_log = true;
+	minimal_fixed_string_t<MAX_PATH> log_file_path;
+	file_handle_t log_file = file_handle_t();
+
 	bool use_VFAT = true;
 	bool process_DOS1xx_images = true;
 	bool process_MBR = true;
@@ -56,7 +60,21 @@ private:
 	options_map_t options_map;
 
 	constexpr static const char* inifilename = "\\fatdiskimg.ini";
-};
 
+public:
+	template<typename... Args>
+	void log_print(const char* format, Args&&... args) {
+		if (allow_GUI_log) {
+			log_print_f(log_file, format, std::forward<Args>(args)...);
+		}
+	}
+
+	template<typename... Args>
+	void log_print_dbg(const char* format, Args&&... args) {
+		debug_print(format, std::forward<Args>(args)...);
+		log_print(format, std::forward<Args>(args)...);
+	}
+
+};
 
 #endif 

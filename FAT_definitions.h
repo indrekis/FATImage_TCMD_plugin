@@ -82,6 +82,14 @@ struct EBPB_FAT32_t {
 	uint32_t get_active_FAT() const {
 		return BS_ExtFlags & 0x0F;
 	}
+	void get_volume_label(char* vol) {
+		size_t idx = 0;
+		while (idx < sizeof(BS_VolLab) && BS_VolLab[idx] != ' ') {
+			vol[idx] = BS_VolLab[idx];
+			++idx;
+		}
+		vol[idx] = '\0';
+	}
 }; // 0x3E = 62
 
 static_assert(sizeof(BPB_DOS3x0_FAT_t) == sizeof(EBPB_FAT_t), "Wrong variadic BPB part size");
@@ -429,7 +437,7 @@ struct VFAT_LFN_dir_entry_t
 				break;
 			}		
 		}
-		auto res = ucs16_to_local(local_record, ucs16_record, idx);
+		auto res = ucs16_to_local(local_record, ucs16_record, idx); //-V106
 		if (res != 0)
 			return res;
 		else {

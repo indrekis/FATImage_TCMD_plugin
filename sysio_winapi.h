@@ -8,9 +8,8 @@
 #include <windows.h>
 #include <cstdint>
 
-#ifndef NDEBUG
 #include <format>
-#endif 
+
 
 const auto file_open_error_v = INVALID_HANDLE_VALUE;
 using file_handle_t = HANDLE;
@@ -20,6 +19,7 @@ file_handle_t open_file_shared_read(const char* filename);
 file_handle_t open_file_write(const char* filename);
 file_handle_t open_file_overwrite(const char* filename);
 bool close_file(file_handle_t handle);
+bool flush_file(file_handle_t handle);
 bool delete_file(const char* filename);
 bool get_temp_filename(char* buff, const char prefix[]);
 bool set_file_pointer(file_handle_t handle, size_t offset);
@@ -42,7 +42,7 @@ template<typename... Args>
 void debug_print(const char* format, Args&&... args) {
 #ifndef NDEBUG
     try {
-        std::string strbuf = std::vformat(format, std::make_format_args(std::forward<Args...>(args)...));
+        std::string strbuf = std::vformat(format, std::make_format_args(std::forward<Args>(args)...));
         OutputDebugString(strbuf.c_str()); // Sends a string to the debugger
     }
     catch (std::exception& ex) {
@@ -51,6 +51,20 @@ void debug_print(const char* format, Args&&... args) {
     // See also http://www.nirsoft.net/utils/simple_program_debugger.html
 #endif // !NDEBUG
 }
+
+template<typename... Args>
+void log_print_f(file_handle_t hnd, const char* format, Args&&... args) {
+    try {
+        std::string strbuf = std::vformat(format, std::make_format_args(std::forward<Args>(args)...));
+        strbuf += '\n';
+        write_file(hnd, strbuf.c_str(), strbuf.size());
+        flush_file(hnd);
+    }
+    catch (std::exception& ex) {
+        OutputDebugString(ex.what());
+    }
+}
+
 
 #endif 
 
