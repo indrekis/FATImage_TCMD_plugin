@@ -109,17 +109,17 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         search_for_boot_sector = get_option_from_map<decltype(search_for_boot_sector)>("search_for_boot_sector"s);
         search_for_boot_sector_range = get_option_from_map<decltype(search_for_boot_sector_range)>("search_for_boot_sector_range"s);
         allow_dialogs = get_option_from_map<decltype(allow_dialogs)>("allow_dialogs"s);
-        allow_GUI_log = get_option_from_map<decltype(allow_GUI_log)>("allow_GUI_log"s);
+        allow_txt_log = get_option_from_map<decltype(allow_txt_log)>("allow_txt_log"s);
         debug_level = get_option_from_map<decltype(debug_level)>("debug_level"s);
         
-        if (allow_GUI_log && log_file_path.is_empty()) {
+        if (allow_txt_log && log_file_path.is_empty()) {
             auto tstr = get_option_from_map<std::string>("log_file_path"s);
             log_file_path.clear();
             log_file_path.push_back(tstr.data());
 
             log_file = open_file_overwrite(log_file_path.data());
             if (log_file == file_open_error_v) {
-                allow_GUI_log = false;
+                allow_txt_log = false;
             }
         }
     }
@@ -158,7 +158,7 @@ bool plugin_config_t::write_conf()
     cf << "search_for_boot_sector=" << search_for_boot_sector << '\n';
     cf << "search_for_boot_sector_range=" << search_for_boot_sector_range << '\n'; //-V128
     cf << "allow_dialogs=" << allow_dialogs << '\n'; 
-    cf << "allow_GUI_log=" << allow_GUI_log << '\n'; 
+    cf << "allow_txt_log=" << allow_txt_log << '\n'; 
     log_file_path.push_back("D:\\Temp\\fatimg.txt");
     cf << "log_file_path=" << log_file_path.data() << '\n';
     cf << "debug_level=" << debug_level << '\n'; 

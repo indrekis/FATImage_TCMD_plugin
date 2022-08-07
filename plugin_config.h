@@ -24,7 +24,7 @@ struct plugin_config_t {
 	bool ignore_boot_signature = false;	   // Some historical floppy images contain correct BPB but do not have 0x55AA signature
 										   // Examples are Norton Utilities 2.00 and 2.01; CheckIt Pro v1.11 (3.5-1.44mb)	
 	bool allow_dialogs = true;
-	bool allow_GUI_log = true;
+	bool allow_txt_log = true;
 	minimal_fixed_string_t<MAX_PATH> log_file_path;
 	file_handle_t log_file = file_handle_t();
 
@@ -64,7 +64,7 @@ private:
 public:
 	template<typename... Args>
 	void log_print(const char* format, Args&&... args) {
-		if (allow_GUI_log) {
+		if (allow_txt_log) {
 			log_print_f(log_file, format, std::forward<Args>(args)...);
 		}
 	}
