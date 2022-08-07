@@ -73,10 +73,10 @@ bool set_file_attributes_ex(const char* filename, FAT_attrib_t attribute) {
 struct arc_dir_entry_t
 {
 	minimal_fixed_string_t<MAX_PATH> PathName;
-	size_t FileSize;
-	uint32_t FileTime;
-	FAT_attrib_t FileAttr;
-	uint32_t FirstClus;
+	size_t FileSize    = 0;
+	uint32_t FileTime  = 0;
+	FAT_attrib_t FileAttr{};
+	uint32_t FirstClus = 0;
 };
 
 plugin_config_t plugin_config; 
@@ -932,10 +932,9 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 			if ((firstclus <= 1) || ( (firstclus >= max_cluster_FAT()) && !is_end_of_chain_FAT(firstclus)) ) {
 				plugin_config.log_print_dbg("Error# Wrong next "
 					"clusters number: {} of 2-{}", firstclus, max_cluster_FAT());
-				//return 0; 
 			}
 			if (is_end_of_chain_FAT(firstclus)) {
-				return 0;
+				break;
 			}
 
 			set_file_pointer(get_archive_handler(), cluster_to_image_off(firstclus)); //-V104
