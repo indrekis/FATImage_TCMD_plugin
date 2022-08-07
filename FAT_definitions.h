@@ -417,7 +417,7 @@ struct VFAT_LFN_dir_entry_t
 
 	//! TODO: no space character at the start or end, and no period at the end.
 	template<typename T>
-	uint32_t dir_LFN_entry_to_ASCII_str(T& name) {
+	uint32_t dir_LFN_entry_to_ASCII_str(T& name) const {
 		wchar_t ucs16_record[LFN_name_part_size] = { 0 };
 		char    local_record[LFN_name_part_size + 1] = { 0 };
 		uint32_t idx = 0;
@@ -452,6 +452,10 @@ struct VFAT_LFN_dir_entry_t
 
 inline VFAT_LFN_dir_entry_t* as_LFN_record(FATxx_dir_entry_t* dir_entry) {
 	return reinterpret_cast<VFAT_LFN_dir_entry_t*>(dir_entry); // In theory -- UB, but in practice -- should work.
+}
+
+inline const VFAT_LFN_dir_entry_t* as_LFN_record(const FATxx_dir_entry_t* dir_entry) {
+	return reinterpret_cast<const VFAT_LFN_dir_entry_t*>(dir_entry); // In theory -- UB, but in practice -- should work.
 }
 static_assert(sizeof(VFAT_LFN_dir_entry_t) == 32, "Wrong size of VFAT_LFN_dir_entry_t"); //-V112
 

@@ -28,7 +28,7 @@
 #include <map>
 #include <cassert>
 
-#define FLTK_ENABLED_EXPERIMENTAL 
+//#define FLTK_ENABLED_EXPERIMENTAL  // Here for the quick tests -- should be defined by the build system
 
 #ifdef FLTK_ENABLED_EXPERIMENTAL
 #include <FL/Fl.H>
@@ -218,13 +218,13 @@ struct FAT_image_t
 		minimal_fixed_string_t<MAX_PATH> cur_LFN_name{};
 		uint8_t cur_LFN_CRC = 0;
 		int cur_LFN_record_index = 0;
-		void start_processing(VFAT_LFN_dir_entry_t* LFN_record) {
+		void start_processing(const VFAT_LFN_dir_entry_t* LFN_record) {
 			cur_LFN_CRC = LFN_record->LFN_DOS_name_CRC;
 			cur_LFN_record_index = 1;
 			cur_LFN_name.clear();
 			LFN_record->dir_LFN_entry_to_ASCII_str(cur_LFN_name);
 		}
-		void append_LFN_part(VFAT_LFN_dir_entry_t* LFN_record) {
+		void append_LFN_part(const VFAT_LFN_dir_entry_t* LFN_record) {
 			++cur_LFN_record_index;
 			minimal_fixed_string_t<MAX_PATH> next_LFN_part;
 			LFN_record->dir_LFN_entry_to_ASCII_str(next_LFN_part);
@@ -239,6 +239,7 @@ struct FAT_image_t
 		bool are_processing() {
 			return cur_LFN_record_index > 0;
 		}
+		void process_LFN_record(const FATxx_dir_entry_t* entry);
 	};
 };
 
@@ -773,6 +774,30 @@ int FAT_image_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 	}
 }
 
+void FAT_image_t::LFN_accumulator_t::process_LFN_record(const FATxx_dir_entry_t* entry) {
+	auto LFN_record = as_LFN_record(entry);
+	if (!are_processing()) {
+		if (!LFN_record->is_LFN_record_valid() || !LFN_record->is_first_LFN()) {
+			return; // No record
+		}
+		start_processing(LFN_record);
+	}
+	else {
+		if (!LFN_record->is_LFN_record_valid()) {
+			abort_processing();
+		}
+		else if (LFN_record->is_first_LFN()) { // Should restart processing 
+			start_processing(LFN_record);
+		}
+		else if (cur_LFN_CRC != LFN_record->LFN_DOS_name_CRC) {
+			abort_processing();
+		}
+		else {
+			append_LFN_part(LFN_record);
+		}
+	}
+}
+
 // root passed by copy to avoid problems while relocating vector
 int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> root, uint32_t firstclus, uint32_t depth) //-V813
 {
@@ -826,34 +851,13 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 		{
 			if (sector[entry_in_cluster].is_dir_record_longname_part()) {
 				if (plugin_config.use_VFAT) {
-					auto LFN_record = as_LFN_record(&sector[entry_in_cluster]);
-					if (!current_LFN.are_processing()) {
-						if (!LFN_record->is_LFN_record_valid() || !LFN_record->is_first_LFN()) {
-							entry_in_cluster++;
-							continue;
-						}
-						current_LFN.start_processing(LFN_record);
-					}
-					else {
-						if (!LFN_record->is_LFN_record_valid()) {
-							current_LFN.abort_processing();
-						} else if (LFN_record->is_first_LFN()) { // Should restart processing 
-							current_LFN.start_processing(LFN_record);
-						}
-						else if (current_LFN.cur_LFN_CRC != LFN_record->LFN_DOS_name_CRC) {
-							current_LFN.abort_processing();
-						}
-						else {
-							current_LFN.append_LFN_part(LFN_record);
-						}
-					}
+					current_LFN.process_LFN_record(&sector[entry_in_cluster]);
 				}
 				entry_in_cluster++;
 				continue;				
 			}
 
-			if (sector[entry_in_cluster].is_dir_record_volumeID() && 
-				!sector[entry_in_cluster].is_dir_record_longname_part()) 
+			if (sector[entry_in_cluster].is_dir_record_volumeID()) 
 			{
 				minimal_fixed_string_t<12> voll;
 				sector[entry_in_cluster].dir_entry_name_to_str(voll);
