@@ -932,8 +932,12 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 			if ((firstclus <= 1) || ( (firstclus >= max_cluster_FAT()) && !is_end_of_chain_FAT(firstclus)) ) {
 				plugin_config.log_print_dbg("Error# Wrong next "
 					"clusters number: {} of 2-{}", firstclus, max_cluster_FAT());
-				return 0; 
+				//return 0; 
 			}
+			if (is_end_of_chain_FAT(firstclus)) {
+				return 0;
+			}
+
 			set_file_pointer(get_archive_handler(), cluster_to_image_off(firstclus)); //-V104
 		}
 		result = read_file(get_archive_handler(), sector.get(), portion_size);
