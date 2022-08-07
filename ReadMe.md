@@ -182,6 +182,7 @@ Problems and limitations
 * Read-only
 * Does not support exFAT 
 * No GPT support 
+* Does not yet support CHS partitions -- only LBA
 * Partial support of Unicode in filenames, code implements only ANSI functions as for now.
   * As a result, the path is limited to 260-1 symbols max.
 * No support for the 8" images, including 86-DOS and CP/M images
