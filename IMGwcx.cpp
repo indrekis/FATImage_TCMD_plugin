@@ -742,7 +742,8 @@ int FAT_image_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 		{
 			if ( (nextclus <= 1) || (nextclus >= min_end_of_chain_FAT()) )
 			{
-				plugin_config.log_print_dbg("Error# Wrong cluster number in chain: {}", nextclus);
+				plugin_config.log_print_dbg("Error# Wrong cluster number in chain: {} in file: {}", 
+							nextclus, cur_entry.PathName.data());
 				close_file(hUnpFile);
 				return E_UNKNOWN_FORMAT;
 			}
