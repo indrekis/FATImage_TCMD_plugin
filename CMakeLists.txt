@@ -14,16 +14,22 @@
 #  cmake --build . --config [Debug|RelWithDebInfo|MinSizeRel]
 
 cmake_minimum_required(VERSION 3.15)
-project(l17_fixed_string)
+project(FATimage)
 
 set(CMAKE_CXX_STANDARD 20)
 
 set(SOURCE_FILES FAT_definitions.cpp  FAT_definitions.h  IMGwcx.cpp  minimal_fixed_string.h  resource.h  sysio_winapi.cpp  sysio_winapi.h wcxhead.h main_resources.rc
 string_tools.cpp string_tools.h plugin_config.cpp plugin_config.h )
 
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)	
+	set(SOURCE_FILES ${SOURCE_FILES} imgwcx64.def)
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
+	set(SOURCE_FILES ${SOURCE_FILES} imgwcx32.def)
+endif()
+
 add_library(IMGwcx64 SHARED ${SOURCE_FILES} )
 set_target_properties(IMGwcx64 PROPERTIES OUTPUT_NAME img)
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)	
 	set_target_properties(IMGwcx64 PROPERTIES SUFFIX .wcx64 PREFIX "") 
 elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
 	set_target_properties(IMGwcx64 PROPERTIES SUFFIX .wcx PREFIX "") 	

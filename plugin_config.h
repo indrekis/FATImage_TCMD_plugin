@@ -21,10 +21,15 @@ struct plugin_config_t {
 	minimal_fixed_string_t<MAX_PATH> config_file_path;
 	uint32_t plugin_interface_version_lo = 0;
 	uint32_t plugin_interface_version_hi = 0;
-	bool ignore_boot_signature = false;	   // Some historical floppy images contain correct BPB but do not have 0x55AA signature
+	bool ignore_boot_signature = true;	   // Some historical floppy images contain correct BPB but do not have 0x55AA signature
 										   // Examples are Norton Utilities 2.00 and 2.01; CheckIt Pro v1.11 (3.5-1.44mb)	
+#if defined FLTK_ENABLED_EXPERIMENTAL && !defined NDEBUG
 	bool allow_dialogs = true;
 	bool allow_txt_log = true;
+#else 
+	bool allow_dialogs = false;
+	bool allow_txt_log = false;
+#endif
 	minimal_fixed_string_t<MAX_PATH> log_file_path;
 	file_handle_t log_file = file_handle_t();
 

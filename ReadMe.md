@@ -219,4 +219,5 @@ Problems and limitations
 * No support for the 8" images, including 86-DOS and CP/M images.
 * Directories data, time, and some attributes are not set properly.
 * Not yet tested on large (close to 2Tb) images.
+* 32-bit plugin version does not support background operation -- TCmd crashes or hangs every time the plugin is used if they are allowed.
 

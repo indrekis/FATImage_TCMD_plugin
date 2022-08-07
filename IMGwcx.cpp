@@ -46,6 +46,9 @@ using std::nothrow, std::uint8_t;
 #ifdef WCX_PLUGIN_EXPORTS
 #define DLLEXPORT __declspec(dllexport)
 #define STDCALL __stdcall
+//! Not enough for the Win32 -- exports would be decorated by: _name@XX.
+//! This can help but reverting to the def-file is simpler:
+//! #pragma comment(linker, "/EXPORT:" __FUNCTION__ "=" __FUNCDNAME__) 
 #else
 #define WCX_API
 #define STDCALL
@@ -1485,10 +1488,11 @@ extern "C" {
 
 	// GetBackgroundFlags is called to determine whether a plugin supports background packing or unpacking.
 	// BACKGROUND_UNPACK == 1 Calls to OpenArchive, ReadHeader(Ex), ProcessFile and CloseArchive are thread-safe 
+#ifdef _WIN64
 	DLLEXPORT int STDCALL GetBackgroundFlags(PackDefaultParamStruct* dps) {
 		return BACKGROUND_UNPACK;
 	}
-
+#endif 
 	DLLEXPORT int STDCALL CanYouHandleThisFile(char* FileName) { // BOOL == int 
 		size_t image_file_size = get_file_size(FileName);
 		auto hArchFile = open_file_shared_read(FileName);

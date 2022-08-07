@@ -380,3 +380,5 @@ FodyWeavers.xsd
 /img.wcx64
 /img.wcx
 *.map
+/tbuild
+/make_distr.sh
