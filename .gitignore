@@ -382,3 +382,5 @@ FodyWeavers.xsd
 *.map
 /tbuild
 /make_distr.sh
+/fatimg.wcx
+/fatimg.wcx64

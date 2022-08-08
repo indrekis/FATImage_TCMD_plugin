@@ -23,6 +23,7 @@
     <SccLocalPath />
     <ProjectGuid>{1EDF664D-9C37-4752-A938-DE7CA10C9895}</ProjectGuid>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>fatimg_wcx</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
@@ -135,10 +136,10 @@
       <LinkDLL>true</LinkDLL>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
-      <OutputFile>img.wcx</OutputFile>
+      <OutputFile>fatimg.wcx</OutputFile>
       <ImportLibrary>.\Debug\img.lib</ImportLibrary>
       <AdditionalDependencies>odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <ModuleDefinitionFile>imgwcx32.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>fatimg_32.def</ModuleDefinitionFile>
       <GenerateMapFile>true</GenerateMapFile>
     </Link>
   </ItemDefinitionGroup>
@@ -180,10 +181,10 @@
       <LinkDLL>true</LinkDLL>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
-      <OutputFile>img.wcx64</OutputFile>
+      <OutputFile>fatimg.wcx64</OutputFile>
       <ImportLibrary>.\Debug\img.lib</ImportLibrary>
       <AdditionalDependencies>odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <ModuleDefinitionFile>imgwcx64.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>fatimg_64.def</ModuleDefinitionFile>
       <GenerateMapFile>true</GenerateMapFile>
     </Link>
   </ItemDefinitionGroup>
@@ -225,10 +226,10 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <LinkDLL>true</LinkDLL>
       <SubSystem>Console</SubSystem>
-      <OutputFile>img.wcx</OutputFile>
+      <OutputFile>fatimg.wcx</OutputFile>
       <ImportLibrary>.\Release\img.lib</ImportLibrary>
       <AdditionalDependencies>odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <ModuleDefinitionFile>imgwcx32.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>fatimg_32.def</ModuleDefinitionFile>
       <GenerateMapFile>true</GenerateMapFile>
     </Link>
   </ItemDefinitionGroup>
@@ -269,16 +270,16 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <LinkDLL>true</LinkDLL>
       <SubSystem>Console</SubSystem>
-      <OutputFile>img.wcx64</OutputFile>
+      <OutputFile>fatimg.wcx64</OutputFile>
       <ImportLibrary>.\Release\img.lib</ImportLibrary>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
-      <ModuleDefinitionFile>imgwcx64.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>fatimg_64.def</ModuleDefinitionFile>
       <GenerateMapFile>true</GenerateMapFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="FAT_definitions.cpp" />
-    <ClCompile Include="IMGwcx.cpp" />
+    <ClCompile Include="fatimg_wcx.cpp" />
     <ClCompile Include="plugin_config.cpp" />
     <ClCompile Include="string_tools.cpp" />
     <ClCompile Include="sysio_winapi.cpp" />
@@ -298,7 +299,8 @@
     <ResourceCompile Include="main_resources.rc" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="imgwcx32.def" />
+    <None Include="fatimg_32.def" />
+    <None Include="fatimg_64.def" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

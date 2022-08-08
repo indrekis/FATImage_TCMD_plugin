@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="IMGwcx.cpp">
+    <ClCompile Include="fatimg_wcx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="sysio_winapi.cpp">
@@ -60,7 +60,10 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="imgwcx32.def">
+    <None Include="fatimg_32.def">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="fatimg_64.def">
       <Filter>Source Files</Filter>
     </None>
   </ItemGroup>
