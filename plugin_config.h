@@ -5,8 +5,7 @@
 
 #include <string>
 #include <map>
-#include <optional>
-#include <string>
+#include <cstdio>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
@@ -51,11 +50,9 @@ struct plugin_config_t {
 	bool write_conf();
 
 private:
-	using parse_string_ret_t = std::pair<std::string, std::optional<std::string>>;
 	using options_map_t = std::map<std::string, std::string>;
 
-	static parse_string_ret_t parse_string(std::string arg);
-	void file_to_options_map(std::istream& cf);
+	int file_to_options_map(std::FILE* cf);
 
 	template<typename T>
 	T get_option_from_map(const std::string& option_name) const;
