@@ -343,7 +343,7 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 	}
 
 	if (bootsec.signature != 0xAA55) {
-		plugin_config.log_print_dbg("Warning# Wrong boot signature: {:#04x}", bootsec.signature);
+		plugin_config.log_print_dbg("Warning# Wrong boot signature: 0x%04X", bootsec.signature);
 		if (!plugin_config.ignore_boot_signature) {
 			if (plugin_config.allow_dialogs) {
 #ifdef FLTK_ENABLED_EXPERIMENTAL
@@ -383,20 +383,20 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 		get_sectors_per_FAT() * static_cast<size_t>(bootsec.BPB_NumFATs)); //-V104
 	dataarea_off_m = get_root_area_offset() + get_root_dir_entry_count() * sizeof(FATxx_dir_entry_t);
 
-	plugin_config.log_print("Info# Bytes per sector: {}", bootsec.BPB_bytesPerSec);
-	plugin_config.log_print("Info# Sectors per cluster: {}", bootsec.BPB_SecPerClus);
-	plugin_config.log_print("Info# Reserved sectors: {}", bootsec.BPB_RsvdSecCnt);
-	plugin_config.log_print("Info# Number of FATs: {}", bootsec.BPB_NumFATs);
-	plugin_config.log_print("Info# Root entries count: {}", bootsec.BPB_RootEntCnt);
-	plugin_config.log_print("Info# Total sectors 16-bit: {}", bootsec.BPB_TotSec16);
-	plugin_config.log_print("Info# Media descriptor: {}", bootsec.BPB_MediaDescr);
-	plugin_config.log_print("Info# Sectors per FAT: {}", bootsec.BPB_SectorsPerFAT);
-	plugin_config.log_print("Info# Sectors per track: {}", bootsec.BPB_SecPerTrk);
-	plugin_config.log_print("Info# Heads: {}", bootsec.BPB_NumHeads);
-	plugin_config.log_print("\nInfo# Bytes in cluster: {}", cluster_size_m);
-	plugin_config.log_print("Info# FAT1 area offset: {:#010x}", FAT1area_off_m);
-	plugin_config.log_print("Info# Root area offset: {:#010x}", rootarea_off_m);
-	plugin_config.log_print("Info# Data area offset: {:#010x}", dataarea_off_m);
+	plugin_config.log_print("Info# Bytes per sector: %d", bootsec.BPB_bytesPerSec);
+	plugin_config.log_print("Info# Sectors per cluster: %d", static_cast<int>(bootsec.BPB_SecPerClus));
+	plugin_config.log_print("Info# Reserved sectors: %d", bootsec.BPB_RsvdSecCnt);
+	plugin_config.log_print("Info# Number of FATs: %d", static_cast<int>(bootsec.BPB_NumFATs));
+	plugin_config.log_print("Info# Root entries count: %d", bootsec.BPB_RootEntCnt);
+	plugin_config.log_print("Info# Total sectors 16-bit: %d", bootsec.BPB_TotSec16);
+	plugin_config.log_print("Info# Media descriptor: %d", static_cast<int>(bootsec.BPB_MediaDescr));
+	plugin_config.log_print("Info# Sectors per FAT: %d", bootsec.BPB_SectorsPerFAT);
+	plugin_config.log_print("Info# Sectors per track: %d", bootsec.BPB_SecPerTrk);
+	plugin_config.log_print("Info# Heads: %d", bootsec.BPB_NumHeads);
+	plugin_config.log_print("\nInfo# Bytes in cluster: %d", cluster_size_m);
+	plugin_config.log_print("Info# FAT1 area offset: 0x%010X", FAT1area_off_m);
+	plugin_config.log_print("Info# Root area offset: 0x%010X", rootarea_off_m);
+	plugin_config.log_print("Info# Data area offset: 0x%010X", dataarea_off_m);
 
 	FAT_type = detect_FAT_type();
 
@@ -440,20 +440,19 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 	}
 
 	if (FAT_type == FAT32_type) {
-		plugin_config.log_print("Info# FAT32 hidden sectors: {}", bootsec.EBPB_FAT32.BPB_HiddSec);
-		plugin_config.log_print("Info# FAT32 total sectors 32-bit: {}", bootsec.EBPB_FAT32.BPB_TotSec32);
-		plugin_config.log_print("Info# FAT32 sectors per FAT: {}", bootsec.EBPB_FAT32.BS_SectorsPerFAT32);
-		plugin_config.log_print("Info# FAT32 sectors per FAT: {}", bootsec.EBPB_FAT32.BS_SectorsPerFAT32);
-		plugin_config.log_print("Info# FAT32 FAT mirroring: {}", bootsec.EBPB_FAT32.is_FAT_mirrored());
+		plugin_config.log_print("Info# FAT32 hidden sectors: %d", bootsec.EBPB_FAT32.BPB_HiddSec);
+		plugin_config.log_print("Info# FAT32 total sectors 32-bit: %d", bootsec.EBPB_FAT32.BPB_TotSec32);
+		plugin_config.log_print("Info# FAT32 sectors per FAT: %d", bootsec.EBPB_FAT32.BS_SectorsPerFAT32);
+		plugin_config.log_print("Info# FAT32 FAT mirroring: %d", bootsec.EBPB_FAT32.is_FAT_mirrored());
 		if (!bootsec.EBPB_FAT32.is_FAT_mirrored()) {
-			plugin_config.log_print("Info# FAT32 active FAT: {}", bootsec.EBPB_FAT32.get_active_FAT());
+			plugin_config.log_print("Info# FAT32 active FAT: %d", bootsec.EBPB_FAT32.get_active_FAT());
 		}
-		plugin_config.log_print("Info# FAT32 Information Sector: {}", bootsec.EBPB_FAT32.BS_FSInfoSec);
-		plugin_config.log_print("Info# FAT32 backup of boot sector: {}", bootsec.EBPB_FAT32.BS_KbpBootSec);
-		plugin_config.log_print("Info# FAT32 Volume ID: {}", bootsec.EBPB_FAT32.BS_VolID);
+		plugin_config.log_print("Info# FAT32 Information Sector: %d", bootsec.EBPB_FAT32.BS_FSInfoSec);
+		plugin_config.log_print("Info# FAT32 backup of boot sector: %d", bootsec.EBPB_FAT32.BS_KbpBootSec);
+		plugin_config.log_print("Info# FAT32 Volume ID: 0x%010X", bootsec.EBPB_FAT32.BS_VolID);
 		char vol_label[12];
 		bootsec.EBPB_FAT32.get_volume_label(vol_label);
-		plugin_config.log_print("Info# FAT32 Volume label: {}", vol_label);
+		plugin_config.log_print("Info# FAT32 Volume label: %s", vol_label);
 	}
 
 	return 0;
@@ -629,7 +628,7 @@ int FAT_image_t::load_FAT() {
 	auto result = read_file(get_archive_handler(), fattable.data(), fat_size_bytes);
 	if (result != fat_size_bytes)
 	{
-		plugin_config.log_print_dbg("Error# Failed to read FAT from the image: {}", result);
+		plugin_config.log_print_dbg("Error# Failed to read FAT from the image: %zd", result);
 		return E_EREAD;
 	}
 	return 0;
@@ -642,7 +641,7 @@ uint64_t FAT_image_t::get_total_sectors_in_volume() const {
 		//! Formally, FAT12 images can contain DOS 3.31+ BPB and have inconsistent BPB_TotSec32/BPB_TotSec16,
 		//! but checking this for FAT12 causes too many false warnings -- because of old images
 		if (FAT_type != FAT12_type && bootsec.EBPB_FAT.BPB_TotSec32 != 0 && bootsec.BPB_TotSec16 != bootsec.EBPB_FAT.BPB_TotSec32) {
-			plugin_config.log_print_dbg("Warning# Inconsistent BPB_TotSec16 and BPB_TotSec32: {} / {}; or pre DOS 3.31 BPB",
+			plugin_config.log_print_dbg("Warning# Inconsistent BPB_TotSec16 and BPB_TotSec32: %d / %d; or pre DOS 3.31 BPB",
 				bootsec.BPB_TotSec16, bootsec.EBPB_FAT.BPB_TotSec32);
 #ifdef FLTK_ENABLED_EXPERIMENTAL
 			if (plugin_config.allow_dialogs) {
@@ -661,7 +660,7 @@ uint64_t FAT_image_t::get_total_sectors_in_volume() const {
 		const uint64_t* BS_TotSec64 = reinterpret_cast<const uint64_t*>(bootsec.EBPB_FAT32.BS_FilSysType);
 		sectors = *BS_TotSec64;
 	}
-	plugin_config.log_print("Info# Total sectors in FAT: {}", sectors);
+	plugin_config.log_print("Info# Total sectors in FAT: %d", sectors);
 	return sectors;
 }
 
@@ -684,24 +683,24 @@ FAT_image_t::FAT_types FAT_image_t::detect_FAT_type() const {
 	if (strncmp(bootsec.EBPB_FAT.BS_FilSysType, "FAT12   ", 8) == 0) {
 		if (clusters > max_cluster_FAT(FAT12_type)) {
 			plugin_config.log_print_dbg("Warning# String \"FAT12\" found in boot, "
-				"but too many clusters: {} of {}", clusters, max_cluster_FAT(FAT12_type));
+				"but too many clusters: %zd of %d", clusters, max_cluster_FAT(FAT12_type));
 			return FAT_image_t::unknown_FS_type;
 		}
 		if (clusters > max_normal_cluster_FAT(FAT12_type)) {
 			plugin_config.log_print_dbg("Warning# FAT12 contains unusual "
-				" clusters number: {} of {}", clusters, max_normal_cluster_FAT(FAT12_type));
+				" clusters number: %zd of %d", clusters, max_normal_cluster_FAT(FAT12_type));
 		}
 		return FAT_image_t::FAT12_type;
 	}
 	if (strncmp(bootsec.EBPB_FAT.BS_FilSysType, "FAT16   ", 8) == 0) {
 		if (clusters > 0x0FFF6) {
 			plugin_config.log_print_dbg("Warning# String \"FAT16\" found in boot, "
-				"but too many clusters: {} of {}", clusters, max_cluster_FAT(FAT16_type));
+				"but too many clusters: %zd of %d", clusters, max_cluster_FAT(FAT16_type));
 			return FAT_image_t::unknown_FS_type;
 		}
 		if (clusters > max_normal_cluster_FAT(FAT16_type)) {
 			plugin_config.log_print_dbg("Warning# FAT16 contains unusual "
-				" clusters number: {} of {}", clusters, max_normal_cluster_FAT(FAT16_type));
+				" clusters number:  %zd of %d", clusters, max_normal_cluster_FAT(FAT16_type));
 		}
 		return FAT_image_t::FAT16_type;
 	}
@@ -714,7 +713,7 @@ FAT_image_t::FAT_types FAT_image_t::detect_FAT_type() const {
 	if (clusters >= 0x00000002 && clusters <= max_cluster_FAT(FAT12_type)) { // 2 - 0x00000FF6: 2–4086
 		if (clusters > max_normal_cluster_FAT(FAT12_type)) {
 			plugin_config.log_print_dbg("Warning# FAT12 contains unusual "
-				" clusters number: {} of {}", clusters, max_normal_cluster_FAT(FAT12_type));
+				" clusters number:  %zd of %d", clusters, max_normal_cluster_FAT(FAT12_type));
 		}
 		return FAT_image_t::FAT12_type;
 	} 
@@ -724,7 +723,7 @@ FAT_image_t::FAT_types FAT_image_t::detect_FAT_type() const {
 		clusters <= max_cluster_FAT(FAT16_type)) { // 0x00000FF7 - 0x0000FFF6: 4087–65526
 		if (clusters > max_normal_cluster_FAT(FAT16_type)) {
 			plugin_config.log_print_dbg("Warning# FAT16 contains unusual "
-				" clusters number: {} of {}", clusters, max_normal_cluster_FAT(FAT16_type));
+				" clusters number: %zd of %d", clusters, max_normal_cluster_FAT(FAT16_type));
 		}
 		return FAT_image_t::FAT16_type;
 	}
@@ -733,7 +732,7 @@ FAT_image_t::FAT_types FAT_image_t::detect_FAT_type() const {
 		clusters <= max_cluster_FAT(FAT32_type)) { // 0x0000FFF7 - 0x0FFFFFF6: 65527–268435446
 		if (clusters > max_normal_cluster_FAT(FAT32_type)) {
 			plugin_config.log_print_dbg("Warning# FAT32 contains unusual "
-				" clusters number: {} of {}", clusters, max_normal_cluster_FAT(FAT32_type));
+				" clusters number: %zd of %d", clusters, max_normal_cluster_FAT(FAT32_type));
 		}
 		return FAT_image_t::FAT32_type;
 	}
@@ -750,7 +749,7 @@ int FAT_image_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 		{
 			if ( (nextclus <= 1) || (nextclus >= min_end_of_chain_FAT()) )
 			{
-				plugin_config.log_print_dbg("Error# Wrong cluster number in chain: {} in file: {}", 
+				plugin_config.log_print_dbg("Error# Wrong cluster number in chain: %d in file: %s", 
 							nextclus, cur_entry.PathName.data());
 				close_file(hUnpFile);
 				return E_UNKNOWN_FORMAT;
@@ -839,11 +838,11 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 
 	if (firstclus >= max_normal_cluster_FAT()) {
 		plugin_config.log_print_dbg("Warning# Unusual first "
-			"clusters number: {} of {}", firstclus, max_normal_cluster_FAT());
+			"clusters number:  %d of %d", firstclus, max_normal_cluster_FAT());
 	}
 	if ( (firstclus == 1) || (firstclus >= max_cluster_FAT()) ) {
 		plugin_config.log_print_dbg("Error# Wrong first "
-			"clusters number: {} of 2-{}", firstclus, max_cluster_FAT());
+			"clusters number: %d of 2-%d", firstclus, max_cluster_FAT());
 		return E_UNKNOWN_FORMAT;
 	}
 	size_t result = read_file(get_archive_handler(), sector.get(), portion_size);
@@ -868,7 +867,7 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 			{
 				minimal_fixed_string_t<12> voll;
 				sector[entry_in_cluster].dir_entry_name_to_str(voll);
-				plugin_config.log_print_dbg("Info# Volume label: {}", voll.data());
+				plugin_config.log_print_dbg("Info# Volume label: %s", voll.data());
 			}
 
 			if (sector[entry_in_cluster].is_dir_record_deleted() ||
@@ -919,7 +918,7 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 				newentryref.PathName.push_back('\\'); // Neccessery for empty dirs to be "enterable"
 			}
 			if (depth > 100) {
-				plugin_config.log_print_dbg("Too many nested directories: {}.", depth);
+				plugin_config.log_print_dbg("Too many nested directories: %d.", depth);
 			}
 			if (sector[entry_in_cluster].is_dir_record_dir() &&
 				(newentryref.FirstClus < max_cluster_FAT()) && (newentryref.FirstClus > 0x1)
@@ -938,11 +937,11 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 			firstclus = next_cluster_FAT(firstclus);
 			if (firstclus >= max_normal_cluster_FAT() && !is_end_of_chain_FAT(firstclus)) {
 				plugin_config.log_print_dbg("Warning# Unusual next "
-					"clusters number: {} of {}", firstclus, max_normal_cluster_FAT());
+					"clusters number: %d of %d", firstclus, max_normal_cluster_FAT());
 			}
 			if ((firstclus <= 1) || ( (firstclus >= max_cluster_FAT()) && !is_end_of_chain_FAT(firstclus)) ) {
 				plugin_config.log_print_dbg("Error# Wrong next "
-					"clusters number: {} of 2-{}", firstclus, max_cluster_FAT());
+					"clusters number: %d of 2-%d", firstclus, max_cluster_FAT());
 			}
 			if (is_end_of_chain_FAT(firstclus)) {
 				break;
@@ -1164,7 +1163,7 @@ int whole_disk_t::process_MBR() {
 			curp.partition_id = mbrs[0].ptable[i].type;
 			if (mbrs[0].ptable[i].is_extended()) { //-V807
 				if (extended_partition_idx != -1) {
-					plugin_config.log_print_dbg("Warning# Too many extended partitions, new extended index: {}", 
+					plugin_config.log_print_dbg("Warning# Too many extended partitions, new extended index: %d", 
 												extended_partition_idx);
 					if (plugin_config.allow_dialogs) {
 #ifdef FLTK_ENABLED_EXPERIMENTAL
@@ -1182,7 +1181,7 @@ int whole_disk_t::process_MBR() {
 					mbrs.push_back({});
 					auto result = read_file(hArchFile, &mbrs.back(), sector_size);
 					if (result != sector_size) {
-						plugin_config.log_print_dbg("Warning# Error reading boot sector: {}", result);
+						plugin_config.log_print_dbg("Warning# Error reading boot sector: %zd", result);
 						break;
 					}
 					partition_info_t curp_ext;
@@ -1216,12 +1215,12 @@ int whole_disk_t::process_volumes() {
 	auto err_code = disks[0].process_bootsector(true);	
 
 	if (err_code != 0) {
-		plugin_config.log_print("Warning# Error reading boot sector: {}", err_code);
+		plugin_config.log_print("Warning# Error reading boot sector: %d", err_code);
 		if (plugin_config.process_DOS1xx_images) {
 			plugin_config.log_print("Info# Processing DOS1.xx image");
 			err_code = disks[0].process_DOS1xx_image();
 			if(err_code != 0)
-				plugin_config.log_print("Warning# Erorr processing DOS1.xx image: {}", err_code);
+				plugin_config.log_print("Warning# Erorr processing DOS1.xx image: %d", err_code);
 		}
 	}
 	int first_err_code = 0;
@@ -1232,10 +1231,10 @@ int whole_disk_t::process_volumes() {
 			if (!err_code) {
 				// Single partition -- treat as a non-partitioned disk for viewing
 				disks[0].set_boot_sector_offset(partition_info[0].first_sector * sector_size);
-				plugin_config.log_print_dbg("Info# Processing partition 0, offset: 0x{:#010x}", disks[0].get_boot_sector_offset());
+				plugin_config.log_print_dbg("Info# Processing partition 0, offset: 0x%010X", disks[0].get_boot_sector_offset());
 				first_err_code = disks[0].process_bootsector(true);
 				if(first_err_code != 0)
-					plugin_config.log_print_dbg("Warning# Error processing partition 0: {}", first_err_code);
+					plugin_config.log_print_dbg("Warning# Error processing partition 0: %d", first_err_code);
 				else 
 					plugin_config.log_print("Info# Processed partition 0");
 
@@ -1244,9 +1243,9 @@ int whole_disk_t::process_volumes() {
 					disks.back().set_boot_sector_offset(partition_info[i].first_sector * sector_size);
 					err_code = disks.back().process_bootsector(true);
 					if (err_code != 0)
-						plugin_config.log_print_dbg("Warning# Error processing partition {}: {}", i, first_err_code);
+						plugin_config.log_print_dbg("Warning# Error processing partition %zd: %d", i, first_err_code);
 					else
-						plugin_config.log_print("Info# Processed partition {}, offset: 0x{:#010x}", i, 
+						plugin_config.log_print("Info# Processed partition %zd, offset: 0x%010X", i, 
 							                disks[0].get_boot_sector_offset());
 				}
 				if (disks.empty() || (first_err_code != 0 && disks.size() == 1)) {
@@ -1269,9 +1268,9 @@ int whole_disk_t::process_volumes() {
 				plugin_config.log_print("Info# Searching for boot sector");
 				err_code = disks[0].process_bootsector(true);
 				if (err_code != 0) 
-					plugin_config.log_print_dbg("Warning# Error searching for boot sector: {}", err_code);
+					plugin_config.log_print_dbg("Warning# Error searching for boot sector: %d", err_code);
 				else 
-					plugin_config.log_print("Info# Found boot sector at: 0x{:#010x}", disks[0].boot_sector_offset);
+					plugin_config.log_print("Info# Found boot sector at: 0x%010X", disks[0].boot_sector_offset);
 			}
 		}
 	}
@@ -1284,7 +1283,7 @@ extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
-		plugin_config.log_print("\n\nInfo# Opening file: {}", ArchiveData->ArcName);
+		plugin_config.log_print("\n\nInfo# Opening file: %s", ArchiveData->ArcName);
 		auto rdconf = plugin_config.read_conf(nullptr, true); // Reread confuguration
 
 		std::unique_ptr<whole_disk_t> arch; // TCmd API expects HANDLE/raw pointer,
@@ -1337,7 +1336,7 @@ extern "C" {
 			}
 		}
 
-		plugin_config.log_print("Info# Loaded FATs {}, of them -- catalogs: {}", loaded_FATs, loaded_catalogs);
+		plugin_config.log_print("Info# Loaded FATs %d, of them -- catalogs: %zd", loaded_FATs, loaded_catalogs);
 
 		if (loaded_catalogs > 0) {
 			ArchiveData->OpenResult = 0; // OK

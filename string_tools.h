@@ -14,7 +14,6 @@
 
 // #define  STRING_TOOLS_USE_STRINGSTREAM 
 #ifdef STRING_TOOLS_USE_STRINGSTREAM
-// + 10Kb to binary immediately :=) 
 #include <sstream>
 #endif 
 
@@ -33,8 +32,8 @@ auto from_str(const std::string& arg){
     else if constexpr (std::is_same_v<T, int>) {
         res = std::stoi(arg, &last_sym);
     }
-    else if constexpr (std::is_same_v<T, decltype(arg)>) {
-        return res; 
+    else if constexpr (std::is_same_v<T, std::remove_cvref_t<decltype(arg)>>) {
+        return arg; 
     }
     else {
 #if defined STRING_TOOLS_USE_STRINGSTREAM 

@@ -8,8 +8,7 @@
 #include <windows.h>
 #include <cstdint>
 
-#include <format>
-
+#include <exception>
 
 const auto file_open_error_v = INVALID_HANDLE_VALUE;
 using file_handle_t = HANDLE;
@@ -55,9 +54,10 @@ void debug_print(const char* format, Args&&... args) {
 template<typename... Args>
 void log_print_f(file_handle_t hnd, const char* format, Args&&... args) {
     try {
-        std::string strbuf = std::vformat(format, std::make_format_args(std::forward<Args>(args)...));
-        strbuf += '\n';
-        write_file(hnd, strbuf.c_str(), strbuf.size());
+        char strbuf[1024 * 4]; //-V112
+        auto res = snprintf(strbuf, sizeof(strbuf) - 1, format, std::forward<Args>(args)...);
+        strcat(strbuf, "\n");
+        write_file(hnd, strbuf, strlen(strbuf));
         flush_file(hnd);
     }
     catch (std::exception& ex) {

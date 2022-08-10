@@ -17,6 +17,7 @@
 #include <memory>
 #include <cassert>
 #include <optional>
+#include <clocale>
 
 namespace {
     using parse_string_ret_t = std::pair<std::string, std::optional<std::string>>;
@@ -90,7 +91,7 @@ T plugin_config_t::get_option_from_map(const std::string& option_name) const {
 
 bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
 {
-    setlocale(LC_ALL, "");
+    std::setlocale(LC_ALL, "");
     using namespace std::literals::string_literals; 
     if (!reread) {
         config_file_path.push_back(dps->DefaultIniName);
@@ -114,26 +115,33 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         std::fclose(cf);
         return false; // Wrong configuration would be overwritten by default configuration.
     }
-    ignore_boot_signature = get_option_from_map<decltype(ignore_boot_signature)>("ignore_boot_signature"s);
-    use_VFAT = get_option_from_map<decltype(use_VFAT)>("use_VFAT"s);
-    process_DOS1xx_images = get_option_from_map<decltype(process_DOS1xx_images)>("process_DOS1xx_images"s);
-    process_MBR = get_option_from_map<decltype(process_MBR)>("process_MBR"s);
-    process_DOS1xx_exceptions = get_option_from_map<decltype(process_DOS1xx_exceptions)>("process_DOS1xx_exceptions"s);
-    search_for_boot_sector = get_option_from_map<decltype(search_for_boot_sector)>("search_for_boot_sector"s);
-    search_for_boot_sector_range = get_option_from_map<decltype(search_for_boot_sector_range)>("search_for_boot_sector_range"s);
-    allow_dialogs = get_option_from_map<decltype(allow_dialogs)>("allow_dialogs"s);
-    allow_txt_log = get_option_from_map<decltype(allow_txt_log)>("allow_txt_log"s);
-    debug_level = get_option_from_map<decltype(debug_level)>("debug_level"s);
-    
-    if (allow_txt_log && log_file_path.is_empty()) {
-        auto tstr = get_option_from_map<std::string>("log_file_path"s);
-        log_file_path.clear();
-        log_file_path.push_back(tstr.data());
+    try {
+        ignore_boot_signature = get_option_from_map<decltype(ignore_boot_signature)>("ignore_boot_signature"s);
+        use_VFAT = get_option_from_map<decltype(use_VFAT)>("use_VFAT"s);
+        process_DOS1xx_images = get_option_from_map<decltype(process_DOS1xx_images)>("process_DOS1xx_images"s);
+        process_MBR = get_option_from_map<decltype(process_MBR)>("process_MBR"s);
+        process_DOS1xx_exceptions = get_option_from_map<decltype(process_DOS1xx_exceptions)>("process_DOS1xx_exceptions"s);
+        search_for_boot_sector = get_option_from_map<decltype(search_for_boot_sector)>("search_for_boot_sector"s);
+        search_for_boot_sector_range = get_option_from_map<decltype(search_for_boot_sector_range)>("search_for_boot_sector_range"s);
+        allow_dialogs = get_option_from_map<decltype(allow_dialogs)>("allow_dialogs"s);
+        allow_txt_log = get_option_from_map<decltype(allow_txt_log)>("allow_txt_log"s);
+        debug_level = get_option_from_map<decltype(debug_level)>("debug_level"s);
 
-        log_file = open_file_overwrite(log_file_path.data());
-        if (log_file == file_open_error_v) {
-            allow_txt_log = false;
+        if (allow_txt_log && log_file_path.is_empty()) {
+            auto tstr = get_option_from_map<std::string>("log_file_path"s);
+            log_file_path.clear();
+            log_file_path.push_back(tstr.data());
+
+            log_file = open_file_overwrite(log_file_path.data());
+            if (log_file == file_open_error_v) {
+                allow_txt_log = false;
+            }
         }
+    }
+    catch (std::exception& ex) {
+        (void)ex;
+        std::fclose(cf);
+        return false; 
     }
        
     std::fclose(cf);
