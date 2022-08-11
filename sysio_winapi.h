@@ -9,6 +9,7 @@
 #include <cstdint>
 
 #include <exception>
+#include <cstdio>
 
 const auto file_open_error_v = INVALID_HANDLE_VALUE;
 using file_handle_t = HANDLE;
