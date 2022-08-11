@@ -28,7 +28,7 @@
 #include <map>
 #include <cassert>
 
-//#define FLTK_ENABLED_EXPERIMENTAL  // Here for the quick tests -- should be defined by the build system
+// #define FLTK_ENABLED_EXPERIMENTAL  // Here for the quick tests -- should be defined by the build system
 
 #ifdef FLTK_ENABLED_EXPERIMENTAL
 #include <FL/Fl.H>
@@ -271,8 +271,6 @@ struct whole_disk_t {
 	}
 
 	// Note that disks, partition_info, mbrs are not synchronized. 
-	// disks contains only known (FAT) volumes, partition_info -- only volumes (no extended partitions)
-	// and mbrs -- MBR and all EBRs.
 	std::vector<FAT_image_t>		disks;
 	std::vector<MBR_t>				mbrs{ 1 };
 	std::vector<partition_info_t>	partition_info;
@@ -459,6 +457,7 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 }
 
 //! Used for reading DOS 1.xx images as a bootsector template. Taken from the IBM PC-DOS 2.00 (5.25) Disk01.img
+//! See also https://github.com/microsoft/MS-DOS
 static uint8_t raw_DOS200_bootsector[] = {
 		0xEB, 0x2C, 0x90, 0x49, 0x42, 0x4D, 0x20, 0x20, 0x32, 0x2E, 0x30, 0x00,
 		0x02, 0x01, 0x01, 0x00, 0x02, 0x40, 0x00, 0x68, 0x01, 0xFC, 0x02, 0x00,

@@ -203,7 +203,7 @@ To check the properties of the mounted loopback partition:
 
 ## Windows
 
-Under MS Windows, free (as a beer) [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html) can be used to mount single-partition and multi-partition images.
+Under MS Windows, free (as a beer) [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html) can be used to mount single-partition and multi-partition images. Less capable but open source similar tool -- [ImDisk](https://sourceforge.net/projects/imdisk-toolkit/).
 
 Other imaging tools used during the tests were famous [WinImage](https://www.winimage.com/) and less known, but free (as a beer), DiskExplorer by junnno (no known site, can be downloaded [here](https://vetusware.com/download/Disk%20Explorer%201.69E/?id=16440)).
 
@@ -213,7 +213,8 @@ Problems and limitations
 * Read-only.
 * Does not support exFAT.
 * No GPT support.
-* Does not yet support CHS partitions -- only LBA.
+* Does not yet support CHS partitions -- only LBA. 
+  * The absolute majority of HDDs created in the 1990s and later are LBA.
 * Partial support of Unicode in filenames, code implements only ANSI functions as for now.
   * As a result, the path is limited to 260-1 symbols max.
 * No support for the 8" images, including 86-DOS and CP/M images.
@@ -221,3 +222,4 @@ Problems and limitations
 * Not yet tested on large (close to 2Tb) images.
 * 32-bit plugin version does not support background operation -- TCmd crashes or hangs every time the plugin is used if they are allowed.
 
+                        
