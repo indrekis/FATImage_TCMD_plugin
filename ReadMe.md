@@ -24,6 +24,7 @@ The plugin supports searching for the boot sector in the image. This is intended
 >
 > where 0xx means any byte. 
 
+Additional information in the author's blog (in Ukrainian): "[Анонс -- 64-бітний плагін Total Commander для роботи із образами FAT](http://indrekis2.blogspot.com/2022/08/64-total-commander-fat.html)" 
 
 Installation
 ============
