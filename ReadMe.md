@@ -161,6 +161,8 @@ Lately, unmount it by:
 
 `sudo umount ~/virtual_disk1`
 
+`sudo losetup -d /dev/loop0`
+
 The exact command lines could depend on your Linux distribution.
 
 ### Example 1 -- nonpartitioned floppy image 
