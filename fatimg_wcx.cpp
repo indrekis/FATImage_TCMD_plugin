@@ -1517,4 +1517,25 @@ Fl_Window* w = new Fl_Window(400, 300);
 w->set_modal();
 w->show();
 while (w->shown()) Fl::wait();
+
+https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setparent -- 
+Changes the parent window of the specified child window.
+HWND SetParent(
+	[in]           HWND hWndChild,
+	[in, optional] HWND hWndNewParent
+);
+
+
+FLTK windows as children of system windows: "replaces WS_POPUP with WS_CHILD flags"
+https ://fltk.easysw.narkive.com/FJwMvdmO/windows-as-children-of-system-windows
+HWND hWnd = (HWND)fl_xid(dlgWnd_);
+SetWindowLong(hWnd, GWL_STYLE, (GetWindowLong(hWnd, GWL_STYLE) & ~WS_POPUP) | WS_CHILD);
+SetParent(hWnd, parentWindow);
+
+https://www.fltk.org/doc-1.3/osissues.html#osissues_win32
+See "Handling Other WIN32 Messages"
+
+Fl_Window* fl_find(HWND xid)
+Returns the Fl_Window that corresponds to the given window handle, or NULL if not found.
+This function uses a cache so it is slightly faster than iterating through the windows yourself.
 #endif
