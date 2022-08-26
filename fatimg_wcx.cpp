@@ -279,6 +279,8 @@ struct whole_disk_t {
 	int detect_MBR();
 	int process_MBR();
 
+	int detect_GPT();
+
 	static minimal_fixed_string_t<MAX_PATH> get_disk_prefix(uint32_t idx) { 
 		minimal_fixed_string_t<MAX_PATH> res{ "C\\" };
 		if (idx > 'Z' - 'C') { // Quick and dirty
@@ -1118,6 +1120,8 @@ int FAT_image_t::search_for_bootsector() {
 }
 
 //------- whole_disk_t implementation --------------------------
+using archive_HANDLE = whole_disk_t*;
+
 int whole_disk_t::detect_MBR() {
 	set_file_pointer(hArchFile, 0);
 	auto result = read_file(hArchFile, &mbrs[0], sector_size);
@@ -1134,12 +1138,51 @@ int whole_disk_t::detect_MBR() {
 	return 0;
 }
 
-using archive_HANDLE = whole_disk_t*;
+//! TODO: Add support for other sector sizes -- at least, 4K
+//! Use 
+//! losetup --sector-size ...
+//! and parted to created debug images:
+//! (parted) mklabel GPT
+//! (parted) mkpart primary 2048s 100%
+int whole_disk_t::detect_GPT() {
+	// https://en.wikipedia.org/wiki/GUID_Partition_Table
+	set_file_pointer(hArchFile, sector_size); // Second sector -- LBA 1
+	GPT_PTH_t buff;
+	auto result = read_file(hArchFile, &buff, sector_size);
+	if (result != sector_size) {
+		return E_UNKNOWN_FORMAT;
+	}
+	auto cmp = memcmp(&buff.signature, GPT_PTH_signature, sizeof(GPT_PTH_signature));
+	if (cmp != 0) {
+		return E_UNKNOWN_FORMAT;
+	}
+
+	if (buff.reserved_0 != 0) {
+		return E_UNKNOWN_FORMAT;
+	}
+
+	return 0;
+}
 
 int whole_disk_t::process_MBR() {
 	auto res = detect_MBR();
-	if (res)
+	if (res) {
 		return res;
+	}
+	// As for now -- just for debug
+	auto resGPT = detect_GPT();
+	if (resGPT == 0) {
+		plugin_config.log_print_dbg("Warning# not supported GPT disk detected.");
+		if (mbrs[0].ptable[0].type != 0xEE) {
+			plugin_config.log_print_dbg("Warning# Wrong GPT protective partititon MBR.");
+		}
+#ifdef FLTK_ENABLED_EXPERIMENTAL
+		if (openmode_m == PK_OM_LIST) {
+			fl_alert("Not supported GPT disk detected.");
+		}		
+#endif 
+		return E_UNKNOWN_FORMAT;
+	}
 	int extended_partition_idx = -1;
 	for (int i = 0; i < mbrs[0].ptables(); ++i) {
 				if (mbrs[0].ptable[i].is_total_zero()) //-V807

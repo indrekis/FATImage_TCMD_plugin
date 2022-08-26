@@ -603,7 +603,43 @@ struct MBR_t
 static_assert(sizeof(MBR_t) == 512, "Wrong size of MBR_t"); 
 #pragma pack(pop)
 
+#pragma pack(push, 1)
+// GPT Partition Table Header: 
+// https://wiki.osdev.org/GPT#LBA_1:_Partition_Table_Header
+// https://en.wikipedia.org/wiki/GUID_Partition_Table
+// All fields, except GUID -- little endian
+// Note: a single partition of type EEh should be present in protective MBR
+// Note: situated at the LBA1 regardless of the sector size.
+constexpr char GPT_PTH_signature[8] = { 0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54 };
+struct GPT_PTH_t{
+	char signature[8];			// 0x00:  "EFI PART", {0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54} 
+								//         or 0x5452415020494645ULL (Little endian)
+	uint32_t revision;			// 0x08: Upper 2 bytes -- major, lower -- minor revision (0..99). 
+								//       Currently 1.00: 00h 00h 01h 00h or 0x00'01'00'00 LE
+	uint32_t header_size;		// 0x0C: Header size, often 92 bytes or 5Ch 
+	uint32_t header_CRC32;		// 0x10: CRC32 of bytes header 0..91, with this byte zeroed. 
+								//	     (Remark: should be header_size used for this CRC32 or fixed 92 bytes value?)
+								//		 Possible implementations: https://web.archive.org/web/20190108202303/http://www.hackersdelight.org/hdcodetxt/crc.c.txt
+	uint32_t reserved_0;		// 0x14: Reserved, should be 0.
 
+	uint64_t GPT_PTH_LBA;		// 0x18: LBA of this header. Often 0x01.
+	uint64_t alt_GPT_PTH_LBA;	// 0x20: LBA of alternate GPT header. Possibly -- last LBA.
+	uint64_t first_usable_LBA;	// 0x28: First usable LBA, primary partition table last LBA + 1.
+	uint64_t last_usable_LBA;	// 0x30: Last  usable LBA, should be alternative partition table first LBA - 1.
+
+	uint8_t  disk_GUID[16];		// 0x38: Unique disk ID -- GUID, mixed endian: uint32_t, uint16_t[2], uint8_t[8].
+	uint64_t part_entries_LBA;	// 0x48: Starting LBA of array of partition entries. Should be 2.
+	uint32_t part_entries_num;  // 0x50: Number of partition entries in array.
+	uint32_t part_entry_size;   // 0x54: Size of a single partition entry. 
+								//       Should be 128 x 2^n, often just 128 bytes (0x80). 
+	uint32_t part_entries_CRC32;// 0x58: CRC32 of partition entries array.
+	
+	uint8_t padding[420];		// 0x5C: padding, should be 0. Sector size at last 512 bytes, but expect it could be larger. 
+};
+
+//! Do not expect sector size equal to 512, but I hope it should be no less.
+static_assert(sizeof(GPT_PTH_t) == 512, "Wrong size of GPT_PTH_t");
+#pragma pack(pop)
 
 //! Links: 
 //! https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system
