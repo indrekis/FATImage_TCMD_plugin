@@ -304,6 +304,9 @@ struct whole_disk_t {
 
 	//! Process boot record if it is a single-disk volume or process all known volumes from the MBR 
 	int process_volumes();
+
+	//! Error handler for safe functions:
+	_invalid_parameter_handler oldHandler;
 };
 
 //------- FAT_image_t implementation -----------------------------
@@ -818,6 +821,8 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 		firstclus = bootsec.EBPB_FAT32.BS_RootFirstClus; 
 	}
 
+	constexpr auto max_depth = 100;
+
 	size_t portion_size = 0;
 	if (firstclus == 0)
 	{   // Read whole FAT12/16 dir at once
@@ -918,12 +923,13 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 			if (sector[entry_in_cluster].is_dir_record_dir()) {
 				newentryref.PathName.push_back('\\'); // Neccessery for empty dirs to be "enterable"
 			}
-			if (depth > 100) {
+			if (depth > max_depth) {
 				plugin_config.log_print_dbg("Too many nested directories: %d.", depth);
+				break;
 			}
 			if (sector[entry_in_cluster].is_dir_record_dir() &&
 				(newentryref.FirstClus < max_cluster_FAT()) && (newentryref.FirstClus > 0x1)
-				&& (depth <= 100))
+				&& (depth <= max_depth))
 			{
 				load_file_list_recursively(newentryref.PathName, newentryref.FirstClus, depth + 1);
 			}
@@ -1322,10 +1328,24 @@ int whole_disk_t::process_volumes() {
 //-----------------------=[ DLL exports ]=--------------------
 
 extern "C" {
+	// https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/set-invalid-parameter-handler-set-thread-local-invalid-parameter-handler?view=msvc-170
+	// https://learn.microsoft.com/en-us/cpp/c-runtime-library/parameter-validation?view=msvc-170
+	// https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/strcpy-s-wcscpy-s-mbscpy-s?view=msvc-170
+	void myInvalidParameterHandler(const wchar_t* expression,
+		const wchar_t* function,
+		const wchar_t* file,
+		unsigned int line,
+		uintptr_t pReserved)
+	{
+		plugin_config.log_print("\n\nError# Invalid parameter detected in function: %s\n"
+			"File: %s Line: %d\nExpression: %s\n", function, file, line, expression);
+	}
+
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
 		plugin_config.log_print("\n\nInfo# Opening file: %s", ArchiveData->ArcName);
+
 		auto rdconf = plugin_config.read_conf(nullptr, true); // Reread confuguration
 
 		std::unique_ptr<whole_disk_t> arch; // TCmd API expects HANDLE/raw pointer,
@@ -1336,6 +1356,7 @@ extern "C" {
 		ArchiveData->CmtBufSize = 0;
 		ArchiveData->CmtSize = 0;
 		ArchiveData->CmtState = 0;
+
 
 		size_t image_file_size = get_file_size(ArchiveData->ArcName);
 		auto hArchFile = open_file_shared_read(ArchiveData->ArcName);
@@ -1352,6 +1373,8 @@ extern "C" {
 			ArchiveData->OpenResult = E_NO_MEMORY;
 			return nullptr;
 		}
+
+		arch->oldHandler = _set_invalid_parameter_handler(myInvalidParameterHandler);
 
 		auto err_code = arch->process_volumes();
 
@@ -1380,7 +1403,7 @@ extern "C" {
 
 		plugin_config.log_print("Info# Loaded FATs %d, of them -- catalogs: %zd", loaded_FATs, loaded_catalogs);
 
-		if (loaded_catalogs > 0) {
+		if (loaded_catalogs > 0 || err_code == 0) { // Second condition -- disk has unknown partitions only
 			ArchiveData->OpenResult = 0; // OK
 			return arch.release(); // Returns raw ptr and releases ownership 
 		}
@@ -1501,6 +1524,7 @@ extern "C" {
 	// CloseArchive should perform all necessary operations when an archive is about to be closed
 	DLLEXPORT int STDCALL CloseArchive(archive_HANDLE hArcData)
 	{
+		_set_invalid_parameter_handler(hArcData->oldHandler);
 		delete hArcData;
 		return 0; // OK
 	}
