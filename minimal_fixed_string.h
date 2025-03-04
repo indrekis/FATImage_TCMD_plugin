@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <array>
+#include <cstring>
 
 template<size_t N>
 class minimal_fixed_string_t {
@@ -32,14 +33,15 @@ public:
 	}
 	bool push_back(const char* str) {
 		data_m[size_m] = '\0';
-		auto res = !strcpy_s(data() + size(), capacity() - size(), str);
+		// +1 -- for strcpy_s, note it we have place for 0 anyway
+		auto res = !strcpy_s(data() + size(), capacity() - size() + 1, str); 
 		size_m += strnlen_s(data() + size(), capacity() - size());
 		return res;
 	}
 	template<size_t M>
 	bool push_back(const minimal_fixed_string_t<M>& fixed_str) {
 		data_m[size_m] = '\0';
-		auto res = !strcpy_s(data() + size(), capacity() - size(), fixed_str.data());
+		auto res = !strcpy_s(data() + size(), capacity() - size() + 1, fixed_str.data());
 		size_m += strnlen_s(data() + size(), capacity() - size());
 		return res;
 	}

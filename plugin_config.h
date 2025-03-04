@@ -9,7 +9,9 @@
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include "sysio_winapi.h"
 #endif 
@@ -65,16 +67,16 @@ private:
 
 public:
 	template<typename... Args>
-	void log_print(const char* format, Args&&... args) {
+	void log_print(const char* format, const Args&... args) {
 		if (allow_txt_log) {
-			log_print_f(log_file, format, std::forward<Args>(args)...);
+			log_print_f(log_file, format, args...);
 		}
 	}
 
 	template<typename... Args>
-	void log_print_dbg(const char* format, Args&&... args) {
-		debug_print(format, std::forward<Args>(args)...);
-		log_print(format, std::forward<Args>(args)...);
+	void log_print_dbg(const char* format, const Args&... args) {
+		debug_print(format, args...);
+		log_print(format, args...);
 	}
 
 };

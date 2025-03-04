@@ -11,6 +11,8 @@
 
 #include "sysio_winapi.h"
 
+//! https://github.com/ggnkua/Jacknife -- Atari images RW plugin
+
 //! https://wiki.osdev.org/FAT#BPB_.28BIOS_Parameter_Block.29
 //! FAT is little endian.
 // BPB = BIOS Parameter Block

@@ -12,6 +12,8 @@
 #  cmake --build . --config Release
 # or any of:
 #  cmake --build . --config [Debug|RelWithDebInfo|MinSizeRel]
+# otherwise ('cmake --build .') could lead to /MD vs /MDd vs others mismatch:
+# `warning LNK4098: defaultlib 'MSVCRT' conflicts with use of other libs fltk`
 
 cmake_minimum_required(VERSION 3.15)
 project(FATimage)
