@@ -8,3 +8,5 @@ EXPORTS
 	PackSetDefaultParams
 	CanYouHandleThisFile
 	GetPackerCaps
+	PackFiles
+	DeleteFiles

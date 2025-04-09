@@ -9,3 +9,5 @@ EXPORTS
 	GetBackgroundFlags
 	CanYouHandleThisFile
 	GetPackerCaps
+	PackFiles
+	DeleteFiles

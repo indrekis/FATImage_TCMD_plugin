@@ -673,6 +673,10 @@
     <ClCompile Include="plugin_config.cpp" />
     <ClCompile Include="string_tools.cpp" />
     <ClCompile Include="sysio_winapi.cpp" />
+	<ClCompile Include="diskio.c" />
+    <ClCompile Include="ff.c" />
+    <ClCompile Include="ffsystem.c" />
+    <ClCompile Include="ffunicode.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FAT_definitions.h" />
@@ -682,6 +686,10 @@
     <ClInclude Include="string_tools.h" />
     <ClInclude Include="sysio_winapi.h" />
     <ClInclude Include="wcxhead.h" />
+    <ClInclude Include="diskio.h" />
+    <ClInclude Include="ff.h" />
+    <ClInclude Include="ffconf.h" />
+
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.md" />

@@ -30,6 +30,18 @@
     <ClCompile Include="plugin_config.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="diskio.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ff.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ffsystem.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ffunicode.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="wcxhead.h">
@@ -50,7 +62,13 @@
     <ClInclude Include="plugin_config.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="resource.h">
+    <ClInclude Include="diskio.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ff.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ffconf.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

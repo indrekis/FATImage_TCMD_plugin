@@ -28,6 +28,7 @@
 #include <map>
 #include <cassert>
 
+#include <fstream>
 // #define FLTK_ENABLED_EXPERIMENTAL  // Here for the quick tests -- should be defined by the build system
 
 #ifdef FLTK_ENABLED_EXPERIMENTAL
@@ -36,6 +37,11 @@
 #include <FL/Fl_Box.H>
 #include <FL/fl_ask.H>
 #endif
+
+extern "C" {
+#include "ff.h"
+#include "diskio.h"
+}
 
 using std::nothrow, std::uint8_t;
 
@@ -83,6 +89,9 @@ struct arc_dir_entry_t
 };
 
 plugin_config_t plugin_config; 
+
+// Pointer to filesystem object for FATFs, needed for mounting
+
 
 //! Contains archive configuration, so FAT_image_t needs it
 struct whole_disk_t; 
@@ -306,7 +315,7 @@ struct whole_disk_t {
 	int process_volumes();
 
 	//! Error handler for safe functions:
-	_invalid_parameter_handler oldHandler;
+	_invalid_parameter_handler oldHandler = nullptr;
 };
 
 //------- FAT_image_t implementation -----------------------------
@@ -820,7 +829,6 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 		// For exotic implementations, if BS_RootFirstClus == 0, will behave as expected
 		firstclus = bootsec.EBPB_FAT32.BS_RootFirstClus; 
 	}
-	
 	size_t portion_size = 0;
 	if (firstclus == 0)
 	{   // Read whole FAT12/16 dir at once
@@ -928,7 +936,7 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 			}
 			if (sector[entry_in_cluster].is_dir_record_dir() &&
 				(newentryref.FirstClus < max_cluster_FAT()) && (newentryref.FirstClus > 0x1)
-				&& (depth <= plugin_config.max_depth))
+				&& (depth <= plugin_config.max_depth))  //-V560 // Always true after the previous if, but leaving it here for clarity
 			{
 				if(invalid_chars > plugin_config.max_invalid_chars_in_dir && invalid_chars != FATxx_dir_entry_t::LLDE_OS2_EA) {
 					plugin_config.log_print_dbg("Warning# Invalid characters in directory name: %s, skipping", newentryref.PathName.data());
@@ -936,7 +944,6 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 				else {
 					load_file_list_recursively(newentryref.PathName, newentryref.FirstClus, depth + 1);
 				}
-				
 			}
 			++entry_in_cluster;
 		}
@@ -1317,14 +1324,14 @@ int whole_disk_t::process_volumes() {
 							                disks[0].get_boot_sector_offset());
 				}
 				if (disks.empty() || (first_err_code != 0 && disks.size() == 1)) {
-					err_code = E_UNKNOWN_FORMAT;
+					err_code = E_UNKNOWN_FORMAT; 
 				}
 				else {
 					err_code = 0;
 				}
 			}
 			else {
-				err_code = E_UNKNOWN_FORMAT;
+				err_code = E_UNKNOWN_FORMAT; //-V1048
 			}
 		}
 	}
@@ -1364,6 +1371,17 @@ extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
+		// std::string log_path = "D:\\log_file.txt";
+
+		// std::FILE* cf = std::fopen(log_path.data(), "a");
+
+		// std::ofstream cf{ config_file_path.data() };
+		// fprintf(cf, "[FAT_disk_img_plugin]\n");
+		// fprintf(cf, "[Open Archive] Called\n");
+		// fprintf(cf, "Version 1.1\n");
+		// std::fclose(cf);
+
+
 		plugin_config.log_print("\n\nInfo# Opening file: %s", ArchiveData->ArcName);
 
 		auto rdconf = plugin_config.read_conf(nullptr, true); // Reread confuguration
@@ -1424,6 +1442,8 @@ extern "C" {
 		plugin_config.log_print("Info# Loaded FATs %d, of them -- catalogs: %zd", loaded_FATs, loaded_catalogs);
 
 		if (loaded_catalogs > 0 || err_code == 0) { // Second condition -- disk has unknown partitions only
+			// assume that the volume may be mounted with FATFs for now (!!!)
+
 			ArchiveData->OpenResult = 0; // OK
 			return arch.release(); // Returns raw ptr and releases ownership 
 		}
@@ -1552,13 +1572,13 @@ extern "C" {
 	// This function allows you to notify user about changing a volume when packing files
 	DLLEXPORT void STDCALL SetChangeVolProc(archive_HANDLE hArcData, tChangeVolProc pChangeVolProc)
 	{
-		hArcData->pLocChangeVol = pChangeVolProc;
+		hArcData->pLocChangeVol = pChangeVolProc; // Was commented in Nataliia code 
 	}
 
 	// This function allows you to notify user about the progress when you un/pack files
 	DLLEXPORT void STDCALL SetProcessDataProc(archive_HANDLE hArcData, tProcessDataProc pProcessDataProc)
 	{
-		hArcData->pLocProcessData = pProcessDataProc;
+		hArcData->pLocProcessData = pProcessDataProc; // Was commented in Nataliia code 
 	}
 
 	// PackSetDefaultParams is called immediately after loading the DLL, before any other function. 
@@ -1575,7 +1595,7 @@ extern "C" {
 	// BACKGROUND_UNPACK == 1 Calls to OpenArchive, ReadHeader(Ex), ProcessFile and CloseArchive are thread-safe 
 #ifdef _WIN64
 	DLLEXPORT int STDCALL GetBackgroundFlags(PackDefaultParamStruct* dps) {
-		return BACKGROUND_UNPACK;
+		return BACKGROUND_PACK | BACKGROUND_UNPACK | BACKGROUND_MEMPACK;
 	}
 #endif 
 	DLLEXPORT int STDCALL CanYouHandleThisFile(char* FileName) { // BOOL == int 
@@ -1595,8 +1615,196 @@ extern "C" {
 	}
 
 	DLLEXPORT int STDCALL GetPackerCaps() {
-		return PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT;
+		return PK_CAPS_NEW | PK_CAPS_MODIFY | PK_CAPS_DELETE | PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT;
 	}
+
+	//// write-mode functions
+	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
+		std::string log_path = "D:\\log_file.txt";
+
+
+		std::FILE* cf = std::fopen(log_path.data(), "a");
+
+		//std::ofstream cf{ config_file_path.data() };
+		if (!cf) {
+			return false;
+		}
+		fprintf(cf, "[FAT_disk_img_plugin]\n");
+		fprintf(cf, "[PackFiles] Called with:\n");
+		fprintf(cf, "  PackedFile : %s\n", PackedFile ? PackedFile : "NULL");
+		fprintf(cf, "  SubPath    : %s\n", SubPath ? SubPath : "NULL");
+		fprintf(cf, "  SrcPath    : %s\n", SrcPath ? SrcPath : "NULL");
+		fprintf(cf, "  AddList    : %s\n", AddList ? AddList : "NULL");
+		fprintf(cf, "  Flags      : %d\n", Flags);
+		fprintf(cf, "Returning : 0\n");
+		std::fclose(cf);
+
+		FATFS fs;
+		FIL dstFile;
+		FILE* srcFile = nullptr;
+		FRESULT fr;
+		UINT bytesWritten;
+		char buffer[4096];
+
+		fr = f_mount(&fs, "", 1);
+		if (fr != FR_OK) return E_UNKNOWN_FORMAT;
+
+		std::string srcFullPath = std::string(SrcPath) + "\\" + AddList;
+
+		srcFile = std::fopen(srcFullPath.data(), "rb");
+		if (!srcFile) {
+			f_close(&dstFile);
+			return E_EOPEN;
+		}
+
+		fr = f_open(&dstFile, AddList, FA_WRITE | FA_CREATE_ALWAYS);
+		if (fr != FR_OK) return E_BAD_ARCHIVE;
+
+
+
+		size_t bytesRead;
+		while ((bytesRead = fread(buffer, 1, sizeof(buffer), srcFile)) > 0) {
+			fr = f_write(&dstFile, buffer, bytesRead, &bytesWritten);
+			if (fr != FR_OK || bytesWritten != bytesRead) {
+				fclose(srcFile);
+				f_close(&dstFile);
+				f_unlink(AddList);
+				return E_EWRITE;
+			}
+		}
+
+		fclose(srcFile);
+		f_close(&dstFile);
+		f_mount(nullptr, "", 0);
+
+		//char* fileToAdd = AddList;
+
+		////create file with FATFS 
+		//FRESULT fr;
+		//FIL file;
+		//char fullPath[MAX_PATH];
+
+
+		//fr = f_open(&file, PackedFile, FA_READ | FA_WRITE);
+		//if (fr != FR_OK) {
+		//	// File doesn't exist, create new
+		//	fr = f_open(&file, PackedFile, FA_CREATE_ALWAYS | FA_WRITE);
+		//	if (fr != FR_OK) {
+		//		return E_ECREATE;  // Couldn't open file
+		//	
+		//}
+
+
+		return 0;
+	}
+		
+	DLLEXPORT int STDCALL DeleteFiles(char *PackedFile, char *DeleteList) {
+		std::string log_path = "D:\\temp\\log_file1.txt";
+
+
+		std::FILE* cf = std::fopen(log_path.data(), "a");
+
+		//std::ofstream cf{ config_file_path.data() };
+		if (!cf) {
+			return false;
+		}
+		fprintf(cf, "[FAT_disk_img_plugin]\n");
+		fprintf(cf, "[DeleteFiles] Called with:\n");
+		fprintf(cf, "  PackedFile : %s\n", PackedFile ? PackedFile : "NULL");
+		fprintf(cf, "  DeleteList : %s\n", DeleteList ? DeleteList : "NULL");
+		fprintf(cf, "Returning : 0\n");
+		std::fclose(cf);
+
+		FATFS fs;
+		FRESULT fr = f_mount(&fs, "", 1);
+		if (fr != FR_OK) {
+			return E_NOT_SUPPORTED;
+		}
+
+		char* fileToDelete = DeleteList;
+
+		fr = f_unlink(fileToDelete);
+
+		if (fr != FR_OK) {
+			// Log failure and return an error code
+			fprintf(cf, "Failed to delete file: %s\n", fileToDelete);
+			std::fclose(cf);
+			return E_ECLOSE;
+		}
+		else {
+			// Log success for each deleted file
+			fprintf(cf, "Successfully deleted file: %s\n", fileToDelete);
+		}
+
+		return 0;
+
+	}
+
+	//DLLEXPORT int STDCALL StartMemPack(int Options, char* FileName) {
+	//	std::string log_path = "E:\\log_file.txt";
+
+
+	//	std::FILE* cf = std::fopen(log_path.data(), "a");
+
+	//	//std::ofstream cf{ config_file_path.data() };
+	//	if (!cf) {
+	//		return false;
+	//	}
+	//	fprintf(cf, "[FAT_disk_img_plugin]\n");
+	//	fprintf(cf, "[StartMemPack] Called with :\n  PackedFile : \n  DeleteList :\n  Returning : E_NOT_SUPPORTED\n");
+	//	std::fclose(cf);
+
+	//	return 0;
+	//}
+	//
+	//DLLEXPORT int STDCALL PackToMem(int hMemPack, char* BufIn, int InLen, int* Taken, char* BufOut,
+	//	int OutLen, int* Written, int SeekBy) {
+	//	std::string log_path = "E:\\log_file.txt";
+
+
+	//	std::FILE* cf = std::fopen(log_path.data(), "a");
+
+	//	//std::ofstream cf{ config_file_path.data() };
+	//	if (!cf) {
+	//		return false;
+	//	}
+	//	fprintf(cf, "[FAT_disk_img_plugin]\n");
+	//	fprintf(cf, "[PackToMem] Called with :\n  PackedFile : \n  DeleteList :\n  Returning : E_NOT_SUPPORTED\n");
+	//	std::fclose(cf);
+
+	//	return 0;
+	//};
+
+	//DLLEXPORT int STDCALL DoneMemPack(int hMemPack) {
+
+	//	std::string log_path = "E:\\log_file.txt";
+
+
+	//	std::FILE* cf = std::fopen(log_path.data(), "a");
+
+	//	//std::ofstream cf{ config_file_path.data() };
+	//	if (!cf) {
+	//		return false;
+	//	}
+	//	fprintf(cf, "[FAT_disk_img_plugin]\n");
+	//	fprintf(cf, "[DoneMemPack] Called with :\n  PackedFile : \n  DeleteList :\n  Returning : E_NOT_SUPPORTED\n");
+	//	std::fclose(cf);
+
+	//	return 0;
+	//};
+
+	//DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
+	//	std::string log_path = "E:\\log_file.txt";
+
+
+	//	std::FILE* cf = std::fopen(log_path.data(), "a");
+
+	//	//std::ofstream cf{ config_file_path.data() };
+	//	fprintf(cf, "[FAT_disk_img_plugin]\n");
+	//	fprintf(cf, "[ConfigurePacker] Called with :\n  PackedFile : \n  DeleteList :\n  Returning : E_NOT_SUPPORTED\n");
+	//	std::fclose(cf);
+	//};
+
 }
 
 #if 0 // FLTK Dialogs:
