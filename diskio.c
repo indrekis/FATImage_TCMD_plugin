@@ -11,6 +11,7 @@
 #include "diskio.h"		/* Declarations of disk functions */
 
 
+
 /* Definitions of physical drive number for each drive */
 #define DEV_RAM		0	/* Example: Map Ramdisk to physical drive 0 */
 #define DEV_MMC		1	/* Example: Map MMC/SD card to physical drive 1 */
@@ -122,7 +123,11 @@ DRESULT disk_read (
     //printf("  sector = %llu\n", (unsigned long long)sector);
     //printf("  count  = %u\n", count);
 
-    FILE* fp = fopen("D:\\APPS_UCU\\Projects\\C++\\fat32.img", "rb");
+    FILE* fp = fopen(drives, "rb");
+    if (fp == NULL) {
+        printf("Error: Failed to open file %s\n", drives);
+        return RES_ERROR;
+    }
     fseek(fp, sector * FF_MIN_SS, SEEK_SET);
     fread(buff, FF_MIN_SS, count, fp);
     fclose(fp);
@@ -184,7 +189,7 @@ DRESULT disk_write (
     //printf("  sector = %llu\n", (unsigned long long)sector);
     //printf("  count  = %u\n", count);
 
-    FILE* fp = fopen("D:\\APPS_UCU\\Projects\\C++\\fat32.img", "rb+");
+    FILE* fp = fopen(drives, "rb+");
     if (!fp) {
         perror("fopen failed");
         return RES_PARERR;

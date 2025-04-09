@@ -13,6 +13,9 @@ extern "C" {
 /* Status of Disk Functions */
 typedef BYTE	DSTATUS;
 
+/* Path to Disk Volumes(images) */
+extern char drives[MAX_PATH];
+
 /* Results of Disk Functions */
 typedef enum {
 	RES_OK = 0,		/* 0: Successful */
