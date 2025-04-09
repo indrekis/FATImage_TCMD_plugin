@@ -1,0 +1,91 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{49953601-f5a2-4c01-b555-f50362f56a7d}</UniqueIdentifier>
+      <Extensions>cpp;c;cxx;rc;def;r;odl;idl;hpj;bat</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{623f4363-2b91-4041-8da5-930b51a0ae3e}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{bbd63ed4-96f8-4ec6-a16f-2f095660d863}</UniqueIdentifier>
+      <Extensions>ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="fatimg_wcx.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sysio_winapi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FAT_definitions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="string_tools.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="plugin_config.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="diskio.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ff.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ffsystem.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ffunicode.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="wcxhead.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="sysio_winapi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="minimal_fixed_string.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FAT_definitions.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="string_tools.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="plugin_config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="diskio.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ff.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ffconf.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ReadMe.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="main_resources.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="fatimg_32.def">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="fatimg_64.def">
+      <Filter>Source Files</Filter>
+    </None>
+  </ItemGroup>
+</Project>

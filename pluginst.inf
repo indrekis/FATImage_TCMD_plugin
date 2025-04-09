@@ -1,0 +1,8 @@
+[plugininstall] 
+description=FAT image unpacking plugin for Total Commander
+descriptionukr=Плагін для роботи із образами FAT для Total Commander
+type=wcx64 
+file=fatimg.wcx64 
+defaultdir=plugin\wcx\fatimg 
+defaultextension=img
+
