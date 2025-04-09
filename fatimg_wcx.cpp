@@ -29,6 +29,7 @@
 #include <cassert>
 
 #include <fstream>
+#include <filesystem>
 
 
 
@@ -63,6 +64,7 @@ using std::nothrow, std::uint8_t;
 #define WCX_API
 #define STDCALL
 #endif 
+
 
 // The DLL entry point
 BOOL APIENTRY DllMain(HANDLE hModule,
@@ -1344,6 +1346,8 @@ extern "C" {
 	// https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/set-invalid-parameter-handler-set-thread-local-invalid-parameter-handler?view=msvc-170
 	// https://learn.microsoft.com/en-us/cpp/c-runtime-library/parameter-validation?view=msvc-170
 	// https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/strcpy-s-wcscpy-s-mbscpy-s?view=msvc-170
+
+	char drives[MAX_PATH] ;
 	void myInvalidParameterHandler(const wchar_t* expression,
 		const wchar_t* function,
 		const wchar_t* file,
@@ -1357,15 +1361,19 @@ extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
+		
 		std::string log_path = "D:\\log_file.txt";
 
 
 		std::FILE* cf = std::fopen(log_path.data(), "a");
-
+		std::filesystem::path some_path = ArchiveData->ArcName;
+		std::string path_str = some_path.generic_string();
+		const char* try_path = path_str.c_str();
 		//std::ofstream cf{ config_file_path.data() };
 		fprintf(cf, "[FAT_disk_img_plugin]\n");
 		fprintf(cf, "[Open Archive] Called\n");
 		fprintf(cf, "Version 1.1\n");
+		fprintf(cf, "Archive Name: %s\n", try_path);
 		std::fclose(cf);
 
 
@@ -1417,6 +1425,7 @@ extern "C" {
 					++loaded_FATs; //-V127
 					err_code = arch->disks[i].load_file_list_recursively(minimal_fixed_string_t<MAX_PATH>{}, 0, 0);
 					if (err_code != 0 && loaded_catalogs == 0) { // Saving the first error
+						
 						ArchiveData->OpenResult = err_code;
 					}
 					else {
@@ -1431,6 +1440,9 @@ extern "C" {
 		if (loaded_catalogs > 0 || err_code == 0) { // Second condition -- disk has unknown partitions only
 
 			//assume that the volume may be mounted with FATFs for now
+			std::filesystem::path path = ArchiveData->ArcName;
+			std::string temp_str = path.generic_string();
+			strncpy(drives, temp_str.c_str(), MAX_PATH);
 
 			ArchiveData->OpenResult = 0; // OK
 			return arch.release(); // Returns raw ptr and releases ownership 
