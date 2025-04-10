@@ -251,35 +251,38 @@ DRESULT disk_write (
 /* Miscellaneous Functions                                               */
 /*-----------------------------------------------------------------------*/
 
-DRESULT disk_ioctl (
-	BYTE pdrv,		/* Physical drive nmuber (0..) */
-	BYTE cmd,		/* Control code */
-	void *buff		/* Buffer to send/receive control data */
+DRESULT disk_ioctl(
+    BYTE pdrv,		/* Physical drive nmuber (0..) */
+    BYTE cmd,		/* Control code */
+    void* buff		/* Buffer to send/receive control data */
 )
 {
-	DRESULT res = RES_OK;
-	int result;
+    DRESULT res;
+    int result;
 
-	switch (pdrv) {
-	case DEV_RAM :
+    res = RES_OK;
 
-		// Process of the command for the RAM drive
+    //	switch (pdrv) {
+    //	case DEV_RAM :
+    //
+    //		// Process of the command for the RAM drive
+    //
+    //		return res;
+    //
+    //	case DEV_MMC :
+    //
+    //		// Process of the command for the MMC/SD card
+    //
+    //		return res;
+    //
+    //	case DEV_USB :
+    //
+    //		// Process of the command the USB drive
+    //
+    //		return res;
+    //	}
 
-		return res;
-
-	case DEV_MMC :
-
-		// Process of the command for the MMC/SD card
-
-		return res;
-
-	case DEV_USB :
-
-		// Process of the command the USB drive
-
-		return res;
-	}
-
-	return RES_PARERR;
+    return res;
 }
+
 
