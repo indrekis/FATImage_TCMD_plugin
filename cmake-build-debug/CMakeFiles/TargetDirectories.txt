@@ -1,0 +1,3 @@
+D:/APPS_UCU/Projects/C++/FAT_Image_TCMD_plugin_write/cmake-build-debug/CMakeFiles/fatimg_wcx.dir
+D:/APPS_UCU/Projects/C++/FAT_Image_TCMD_plugin_write/cmake-build-debug/CMakeFiles/edit_cache.dir
+D:/APPS_UCU/Projects/C++/FAT_Image_TCMD_plugin_write/cmake-build-debug/CMakeFiles/rebuild_cache.dir

@@ -1,0 +1,136 @@
+{
+	"kind" : "toolchains",
+	"toolchains" : 
+	[
+		{
+			"compiler" : 
+			{
+				"id" : "Clang",
+				"implicit" : 
+				{
+					"includeDirectories" : 
+					[
+						"C:/msys64/mingw64/lib/clang/18/include",
+						"C:/msys64/mingw64/include"
+					],
+					"linkDirectories" : 
+					[
+						"C:/msys64/mingw64/lib/gcc/x86_64-w64-mingw32/14.1.0",
+						"C:/msys64/mingw64/x86_64-w64-mingw32/lib",
+						"C:/msys64/mingw64/x86_64-w64-mingw32/mingw/lib",
+						"C:/msys64/mingw64/lib"
+					],
+					"linkFrameworkDirectories" : [],
+					"linkLibraries" : 
+					[
+						"mingw32",
+						"gcc",
+						"moldname",
+						"mingwex",
+						"pthread",
+						"advapi32",
+						"shell32",
+						"user32",
+						"kernel32",
+						"mingw32",
+						"gcc",
+						"moldname",
+						"mingwex",
+						"kernel32"
+					]
+				},
+				"path" : "C:/msys64/mingw64/bin/clang.exe",
+				"version" : "18.1.4"
+			},
+			"language" : "C",
+			"sourceFileExtensions" : 
+			[
+				"c",
+				"m"
+			]
+		},
+		{
+			"compiler" : 
+			{
+				"id" : "Clang",
+				"implicit" : 
+				{
+					"includeDirectories" : 
+					[
+						"C:/msys64/mingw64/include/c++/14.1.0",
+						"C:/msys64/mingw64/include/c++/14.1.0/x86_64-w64-mingw32",
+						"C:/msys64/mingw64/include/c++/14.1.0/backward",
+						"C:/msys64/mingw64/lib/clang/18/include",
+						"C:/msys64/mingw64/include"
+					],
+					"linkDirectories" : 
+					[
+						"C:/msys64/mingw64/lib/gcc/x86_64-w64-mingw32/14.1.0",
+						"C:/msys64/mingw64/x86_64-w64-mingw32/lib",
+						"C:/msys64/mingw64/x86_64-w64-mingw32/mingw/lib",
+						"C:/msys64/mingw64/lib"
+					],
+					"linkFrameworkDirectories" : [],
+					"linkLibraries" : 
+					[
+						"stdc++",
+						"mingw32",
+						"gcc_s",
+						"gcc",
+						"moldname",
+						"mingwex",
+						"pthread",
+						"advapi32",
+						"shell32",
+						"user32",
+						"kernel32",
+						"mingw32",
+						"gcc_s",
+						"gcc",
+						"moldname",
+						"mingwex",
+						"kernel32"
+					]
+				},
+				"path" : "C:/msys64/mingw64/bin/clang++.exe",
+				"version" : "18.1.4"
+			},
+			"language" : "CXX",
+			"sourceFileExtensions" : 
+			[
+				"C",
+				"M",
+				"c++",
+				"cc",
+				"cpp",
+				"cxx",
+				"mm",
+				"mpp",
+				"CPP",
+				"ixx",
+				"cppm",
+				"ccm",
+				"cxxm",
+				"c++m"
+			]
+		},
+		{
+			"compiler" : 
+			{
+				"implicit" : {},
+				"path" : "C:/msys64/mingw64/bin/windres.exe"
+			},
+			"language" : "RC",
+			"sourceFileExtensions" : 
+			[
+				"rc",
+				"RC"
+			]
+		}
+	],
+	"version" : 
+	{
+		"major" : 1,
+		"minor" : 0
+	}
+}

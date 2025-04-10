@@ -27,6 +27,8 @@
 #include <optional>
 #include <map>
 #include <cassert>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include <fstream>
 #include <filesystem>
@@ -1649,7 +1651,32 @@ extern "C" {
 		fr = f_mount(&fs, "", 1);
 		if (fr != FR_OK) return E_UNKNOWN_FORMAT;
 
-		std::string srcFullPath = std::string(SrcPath) + "\\" + AddList;
+		std::string srcFullPath = std::string(SrcPath) + "/" + AddList;
+
+		std::string targetPath;
+		if ((SubPath != NULL) && std::strlen(SubPath) > 0) {
+			targetPath = std::string(SubPath) + "/" + AddList;
+		}
+		else {
+			targetPath = std::string(AddList);
+		}
+
+
+		DWORD fileAttributes = GetFileAttributes(srcFullPath.c_str());
+		if (fileAttributes == INVALID_FILE_ATTRIBUTES) {
+			f_mount(nullptr, "", 0);
+			return E_EOPEN;  // Couldn't get file attributes
+		}
+
+		if (fileAttributes & FILE_ATTRIBUTE_DIRECTORY) {  // If it's a dir
+			// Create a dir in FAT img
+			fr = f_mkdir(targetPath.c_str());
+			if (fr != FR_OK) {
+				f_mount(nullptr, "", 0);
+				return E_ECREATE;  // Couldn't create a dir
+			}
+			return 0;
+		}
 
 		srcFile = std::fopen(srcFullPath.data(), "rb");
 		if (!srcFile) {
@@ -1657,7 +1684,7 @@ extern "C" {
 			return E_EOPEN;
 		}
 
-		fr = f_open(&dstFile, AddList, FA_WRITE | FA_CREATE_ALWAYS);
+		fr = f_open(&dstFile, targetPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
 		if (fr != FR_OK) return E_BAD_ARCHIVE;
 
 
@@ -1668,7 +1695,7 @@ extern "C" {
 			if (fr != FR_OK || bytesWritten != bytesRead) {
 				fclose(srcFile);
 				f_close(&dstFile);
-				f_unlink(AddList);
+				f_unlink(targetPath.c_str());
 				return E_EWRITE;
 			}
 		}
@@ -1685,7 +1712,6 @@ extern "C" {
 		//char fullPath[MAX_PATH];
 
 
-		//fr = f_open(&file, PackedFile, FA_READ | FA_WRITE);
 		//if (fr != FR_OK) {
 		//	// File doesn't exist, create new
 		//	fr = f_open(&file, PackedFile, FA_CREATE_ALWAYS | FA_WRITE);
@@ -1721,20 +1747,81 @@ extern "C" {
 			return E_NOT_SUPPORTED;
 		}
 
-		char* fileToDelete = DeleteList;
+		auto recursive_del = [&](const char* path, auto&& recursive_del_ref) -> FRESULT {
+			DIR dir;
+			FILINFO fno;
+			FRESULT res = f_opendir(&dir, path);
+			if (res != FR_OK) return res;
 
-		fr = f_unlink(fileToDelete);
+			while (true) {
+				res = f_readdir(&dir, &fno);
+				if (res != FR_OK || fno.fname[0] == 0) break;
+
+				if (strcmp(fno.fname, ".") == 0 || strcmp(fno.fname, "..") == 0) continue;
+
+				std::string fullPath = std::string(path) + "/" + fno.fname;
+				if (fno.fattrib & AM_DIR) {
+					// Recurse into subdirectory
+					res = recursive_del_ref(fullPath.c_str(), recursive_del_ref);
+					if (res != FR_OK) return res;
+				}
+				else {
+					res = f_unlink(fullPath.c_str());
+					if (res != FR_OK) return res;
+				}
+			}
+			f_closedir(&dir);
+
+			// Delete the now-empty directory
+			return f_unlink(path);
+			};
+
+		std::string deletePath = DeleteList;
+		if (deletePath.size() >= 2) {
+			bool isDirectoryDelete = false;
+
+			if (deletePath.size() >= 3 && deletePath.substr(deletePath.size() - 3) == "*.*") {
+				isDirectoryDelete = true;
+			}
+
+			// If it's a directory delete command, truncate the path
+			if (isDirectoryDelete) {
+				size_t lastSlash = deletePath.find_last_of("\\/");
+				if (lastSlash != std::string::npos) {
+					deletePath = deletePath.substr(0, lastSlash);
+				}
+			}
+		}
+
+		FILINFO info;
+		fr = f_stat(deletePath.c_str(), &info);
+		if (fr != FR_OK) {
+			fprintf(cf, "f_stat failed on %s\n", DeleteList);
+			std::fclose(cf);
+			return E_ECLOSE;
+		}
+
+		if (info.fattrib & AM_DIR) {
+			fr = recursive_del(deletePath.c_str(), recursive_del); // if it's a dir del recursive
+		}
+		else {
+			fr = f_unlink(deletePath.c_str()); // unlink the file
+		}
+
+
 
 		if (fr != FR_OK) {
 			// Log failure and return an error code
-			fprintf(cf, "Failed to delete file: %s\n", fileToDelete);
+			fprintf(cf, "Failed to delete file: %s\n", deletePath.c_str());
 			std::fclose(cf);
 			return E_ECLOSE;
 		}
 		else {
 			// Log success for each deleted file
-			fprintf(cf, "Successfully deleted file: %s\n", fileToDelete);
+			fprintf(cf, "Successfully deleted file: %s\n", deletePath.c_str());
 		}
+
+		f_mount(nullptr, "", 0);
 
 		return 0;
 
