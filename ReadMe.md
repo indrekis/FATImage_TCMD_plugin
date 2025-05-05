@@ -24,7 +24,7 @@ The plugin supports searching for the boot sector in the image. This is intended
 >
 > where 0xx means any byte. 
 
-Additional information in the author's blog (in Ukrainian): "[Àíîíñ -- 64-á³òíèé ïëàã³í Total Commander äëÿ ðîáîòè ³ç îáðàçàìè FAT](http://indrekis2.blogspot.com/2022/08/64-total-commander-fat.html)" 
+Additional information in the author's blog (in Ukrainian): "[Анонс -- 64-бітний плагін Total Commander для роботи із образами FAT](https://indrekis2.blogspot.com/2022/08/64-total-commander-fat.html)" 
 
 Installation
 ============
@@ -77,7 +77,7 @@ debug_level=0
 * `ignore_boot_signature`. If the first 512-byte sector of the image does not contain 0x55AA and ignore_boot_signature == 0, the image is treated as not a FAT volume, even if the BPB data looks consistent.
 * `use_VFAT` -- if 1, long file names are processed (regardless of the FAT type).
 * `process_DOS1xx_images == 1` allows to interpret image with exact size, equal to: 160Kb, 180Kb, 320Kb, or 360Kb as a pre-BPB FAT image. Such images mostly came from the DOS 1.xx epoch disks. Disk format is then detected based on the [Media descriptor byte](https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#FATID) -- the first byte of the FAT, which is considered situated in the first byte of the second image sector. 
-  * It is a much less reliable format detection criterion than the full BP,B so enabling this option can interfere with the normal image processing, though the author never met with such a situation.
+  * It is a much less reliable format detection criterion than the full BPB, so enabling this option can interfere with the normal image processing, though the author never met with such a situation.
   * MC/PC-DOS versions 2.00-3.20 [sometimes created bad BPBs](http://www.os2museum.com/wp/dos-boot-sector-bpb-and-the-media-descriptor-byte/), making the media descriptors the main source of disk format information.
 * process_DOS1xx_exceptions=1 -- enables DOS 1.xx non-BPB images processing exceptions targeted at supporting the popular quirks of historical disk images from the retro sites. Not recommended for typical users.
 * `process_MBR == 1` -- if the disk is not a correct non-partitioned disk image, try to interpret it as an MBR-based partitioned image.
