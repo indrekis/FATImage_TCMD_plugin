@@ -4,6 +4,7 @@
 * Floppy disk images unpack plugin for the Total Commander.
 * Copyright (c) 2002, IvGzury ( ivgzury@hotmail.com )
 * Copyright (c) 2022-2025, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
+* Copyright (c) 2025, Nataliia Sydor aka NataMontari ( natalya.sydor@gmail.com )
 *
 * Oleg Farenyuk's code is released under the MIT License.
 *
@@ -1365,7 +1366,16 @@ extern "C" {
 	// https://learn.microsoft.com/en-us/cpp/c-runtime-library/parameter-validation?view=msvc-170
 	// https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/strcpy-s-wcscpy-s-mbscpy-s?view=msvc-170
 
-	char drives[MAX_PATH];
+	char drives[MAX_PATH] ; //open file pathes
+	int disks_size = 0;
+
+	PARTITION VolToPart[] = {
+    {0, 1}, // partition 1 on drive 0
+    {0, 2}, // partition 2 on drive 0
+    {0, 3}, // partition 3 on drive 0
+	{1, 0}
+	};
+
 	void myInvalidParameterHandler(const wchar_t* expression,
 		const wchar_t* function,
 		const wchar_t* file,
@@ -1379,18 +1389,22 @@ extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
-		// std::string log_path = "D:\\log_file.txt";
-		// std::FILE* cf = std::fopen(log_path.data(), "a");
-		// std::filesystem::path some_path = ArchiveData->ArcName;
-		// std::string path_str = some_path.generic_string();
-		// const char* try_path = path_str.c_str();
-		// //std::ofstream cf{ config_file_path.data() };
-		// fprintf(cf, "[FAT_disk_img_plugin]\n");
-		// fprintf(cf, "[Open Archive] Called\n");
-		// fprintf(cf, "Version 1.1\n");
-		// fprintf(cf, "Archive Name: %s\n", try_path);
-		// std::fclose(cf);
+		//DEBUG PRINT, DON'T FORGET TO DELETE
+		{
+			std::string log_path = "D:\\log_file.txt";
 
+
+			std::FILE* cf = std::fopen(log_path.data(), "a");
+			std::filesystem::path some_path = ArchiveData->ArcName;
+			std::string path_str = some_path.generic_string();
+			const char* try_path = path_str.c_str();
+			//std::ofstream cf{ config_file_path.data() };
+			fprintf(cf, "[FAT_disk_img_plugin]\n");
+			fprintf(cf, "[Open Archive] Called\n");
+			fprintf(cf, "Version 1.1\n");
+			fprintf(cf, "Archive Name: %s\n", try_path);
+			std::fclose(cf);
+		}
 
 		plugin_config.log_print("\n\nInfo# Opening file: %s", ArchiveData->ArcName);
 
@@ -1456,8 +1470,9 @@ extern "C" {
 			//assume that the volume may be mounted with FATFs for now
 			std::filesystem::path path = ArchiveData->ArcName;
 			std::string temp_str = path.generic_string();
-			strncpy(drives, temp_str.c_str(), MAX_PATH);
+			strncpy(drives, temp_str.c_str(), MAX_PATH); //adds the file-folder path to the drives list - shared between dikio.c and fatimg_wcx.cpp
 
+			disks_size = arch->disks.size();
 			ArchiveData->OpenResult = 0; // OK
 			return arch.release(); // Returns raw ptr and releases ownership 
 		}
@@ -1629,115 +1644,247 @@ extern "C" {
 	}
 
 	DLLEXPORT int STDCALL GetPackerCaps() {
-		return PK_CAPS_NEW | PK_CAPS_MODIFY | PK_CAPS_DELETE | PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT;
+		return PK_CAPS_NEW | PK_CAPS_MODIFY | PK_CAPS_DELETE | PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_MULTIPLE;
 	}
 
-	//// write-mode functions
-	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
-		std::string log_path = "D:\\log_file.txt";
+	int PackDirectory(const std::string& hostPath, const std::string& fatPath) {
 
-
-		std::FILE* cf = std::fopen(log_path.data(), "a");
-
-		//std::ofstream cf{ config_file_path.data() };
-		if (!cf) {
-			return false;
-		}
-		fprintf(cf, "[FAT_disk_img_plugin]\n");
-		fprintf(cf, "[PackFiles] Called with:\n");
-		fprintf(cf, "  PackedFile : %s\n", PackedFile ? PackedFile : "NULL");
-		fprintf(cf, "  SubPath    : %s\n", SubPath ? SubPath : "NULL");
-		fprintf(cf, "  SrcPath    : %s\n", SrcPath ? SrcPath : "NULL");
-		fprintf(cf, "  AddList    : %s\n", AddList ? AddList : "NULL");
-		fprintf(cf, "  Flags      : %d\n", Flags);
-		fprintf(cf, "Returning : 0\n");
-		std::fclose(cf);
-
-		FATFS fs;
+		std::string name;
+		std::string srcFullPath;
+		std::string dstFullPath;
 		FIL dstFile;
 		FILE* srcFile = nullptr;
 		FRESULT fr;
 		UINT bytesWritten;
 		char buffer[4096];
-
-		fr = f_mount(&fs, "", 1);
-		if (fr != FR_OK) return E_UNKNOWN_FORMAT;
-
-		std::string srcFullPath = std::string(SrcPath) + "/" + AddList;
-
-		std::string targetPath;
-		if ((SubPath != NULL) && std::strlen(SubPath) > 0) {
-			targetPath = std::string(SubPath) + "/" + AddList;
-		}
-		else {
-			targetPath = std::string(AddList);
-		}
+		int overallResult = 0;
 
 
-		DWORD fileAttributes = GetFileAttributes(srcFullPath.c_str());
-		if (fileAttributes == INVALID_FILE_ATTRIBUTES) {
-			f_mount(nullptr, "", 0);
-			return E_EOPEN;  // Couldn't get file attributes
-		}
+		fr = f_mkdir(fatPath.c_str());
+		if (fr != FR_OK && fr != FR_EXIST) return E_ECREATE;
 
-		if (fileAttributes & FILE_ATTRIBUTE_DIRECTORY) {  // If it's a dir
-			// Create a dir in FAT img
-			fr = f_mkdir(targetPath.c_str());
-			if (fr != FR_OK) {
-				f_mount(nullptr, "", 0);
-				return E_ECREATE;  // Couldn't create a dir
+		try {
+			for (const auto& entry : std::filesystem::directory_iterator(hostPath)) {
+				name = entry.path().filename().string();
+				srcFullPath = entry.path().string();
+				dstFullPath = fatPath + "/" + name;
+
+				if (entry.is_directory()) {
+					int res = PackDirectory(srcFullPath, dstFullPath);
+					if (res != 0) {
+						overallResult = res;
+						continue;
+					}
+				}
+				else {
+					srcFile = fopen(srcFullPath.c_str(), "rb");
+					if (!srcFile) {
+						overallResult = E_EOPEN;
+						continue;
+					}
+
+					fr = f_open(&dstFile, dstFullPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
+					if (fr != FR_OK) {
+						fclose(srcFile);
+						overallResult = E_ECREATE;
+						continue;
+					}
+
+					size_t bytesRead;
+					bool errorOccurred = false;
+					while ((bytesRead = fread(buffer, 1, sizeof(buffer), srcFile)) > 0) {
+						fr = f_write(&dstFile, buffer, bytesRead, &bytesWritten);
+						if (fr != FR_OK || bytesWritten != bytesRead) {
+							errorOccurred = true;
+							overallResult = E_EWRITE;
+							break;
+						}
+					}
+
+					fclose(srcFile);
+					f_close(&dstFile);
+					if (errorOccurred) {
+						// Remove partially written file
+						f_unlink(dstFullPath.c_str());
+						continue;
+					}
+				}
 			}
-			return 0;
+		}
+		catch (const std::filesystem::filesystem_error& e) {
+			// Handle filesystem-related errors
+			
+			return E_BAD_ARCHIVE;
+		}
+		catch (...) {
+			// Catch any other unexpected errors
+			return E_UNKNOWN_FORMAT;
+		}
+		return overallResult;
+	}
+
+	//// write-mode functions
+	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
+
+		//DEBUG PRINT, DON'T FORGET TO DELETE
+		{
+			std::string log_path = "D:\\log_file.txt";
+
+
+			std::FILE* cf = std::fopen(log_path.data(), "a");
+
+			//std::ofstream cf{ config_file_path.data() };
+			if (!cf) {
+				return false;
+			}
+			fprintf(cf, "[FAT_disk_img_plugin]\n");
+			fprintf(cf, "[PackFiles] Called with:\n");
+			fprintf(cf, "  PackedFile : %s\n", PackedFile ? PackedFile : "NULL");
+			fprintf(cf, "  SubPath    : %s\n", SubPath ? SubPath : "NULL");
+			fprintf(cf, "  SrcPath    : %s\n", SrcPath ? SrcPath : "NULL");
+			fprintf(cf, "  AddList    : %s\n", AddList ? AddList : "NULL");
+			fprintf(cf, "  Flags      : %d\n", Flags);
+			fprintf(cf, "Returning : 0\n");
+			std::fclose(cf);
 		}
 
-		srcFile = std::fopen(srcFullPath.data(), "rb");
-		if (!srcFile) {
-			f_close(&dstFile);
-			return E_EOPEN;
+		FATFS fs;
+		FRESULT fr;
+		int logical_drive_number = 3;
+		char drive_letter;
+
+		if (disks_size >= 2) {
+			if (SubPath != NULL) {
+				drive_letter = toupper(SubPath[0]);
+
+				if (drive_letter >= 'C' && drive_letter <= 'F') {
+					logical_drive_number = drive_letter - 'C';
+				}
+				else {
+					return E_ECLOSE;
+				}
+			}
+			else {
+				if (AddList != NULL && std::strlen(AddList) > 1) {
+					drive_letter = toupper(AddList[0]);
+
+					if (drive_letter >= 'C' && drive_letter <= 'F' && AddList[1] == '\\') {
+						logical_drive_number = drive_letter - 'C';
+					}
+					else {
+						return E_ECLOSE;
+					}
+				}
+				else {
+					return E_ECLOSE;
+				}
+			}
 		}
+		std::string lv_drv_num = std::string(1, '0' + logical_drive_number) + ":";
+		fr = f_mount(&fs, lv_drv_num.c_str(), 1);
+		if (fr != FR_OK) return E_UNKNOWN_FORMAT;
+		try {
 
-		fr = f_open(&dstFile, targetPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
-		if (fr != FR_OK) return E_BAD_ARCHIVE;
+			for (char* current = AddList; current && *current != '\0'; current += std::strlen(current) + 1) {
 
 
 
-		size_t bytesRead;
-		while ((bytesRead = fread(buffer, 1, sizeof(buffer), srcFile)) > 0) {
-			fr = f_write(&dstFile, buffer, bytesRead, &bytesWritten);
-			if (fr != FR_OK || bytesWritten != bytesRead) {
+				std::string srcFullPath = std::string(SrcPath) + current;
+
+				if (disks_size >= 2) {
+					if (current[1] == '\\' && current[0] >= 'C' && current[0] <= 'F') {
+						current += 2;
+					}
+				}
+
+				std::string targetPath;
+				if (SubPath && std::strlen(SubPath) > 0) {
+					targetPath = std::string(SubPath) + "/" + current;
+
+					if (disks_size >= 2) {
+						if (targetPath.size() >= 2 && targetPath[1] == '\\') {
+							targetPath = targetPath.substr(2);
+						}
+					}
+					targetPath = lv_drv_num + "/" + targetPath;
+				}
+				else {
+					targetPath = lv_drv_num + "/" + std::string(current);
+				}
+
+				DWORD fileAttributes = GetFileAttributes(srcFullPath.c_str());
+				if (fileAttributes == INVALID_FILE_ATTRIBUTES) {
+					continue;  // Couldn't get file attributes
+				}
+
+				if (fileAttributes & FILE_ATTRIBUTE_DIRECTORY) {  // If it's a dir
+					// Create a dir in FAT img
+
+					int res = PackDirectory(srcFullPath, targetPath);
+					if (res != 0) {
+						// Directory packing failed
+						f_mount(nullptr, lv_drv_num.c_str(), 0);
+						return res;
+					}
+					continue;
+				}
+
+				FILE* srcFile = std::fopen(srcFullPath.data(), "rb");
+				if (!srcFile) {
+					// Cannot open source file
+					f_mount(nullptr, lv_drv_num.c_str(), 0);
+					return E_EOPEN;
+				}
+
+				FIL dstFile;
+				fr = f_open(&dstFile, targetPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
+				if (fr != FR_OK) {
+					fclose(srcFile);
+					f_mount(nullptr, lv_drv_num.c_str(), 0);
+					return E_BAD_ARCHIVE;
+				}
+
+
+
+				char buffer[4096];
+				size_t bytesRead;
+				UINT bytesWritten;
+				bool errorOccurred = false;
+
+				while ((bytesRead = fread(buffer, 1, sizeof(buffer), srcFile)) > 0) {
+					fr = f_write(&dstFile, buffer, bytesRead, &bytesWritten);
+					if (fr != FR_OK || bytesWritten != bytesRead) {
+						// Write error occurred
+						errorOccurred = true;
+						break;
+					}
+				}
+
 				fclose(srcFile);
 				f_close(&dstFile);
-				f_unlink(targetPath.c_str());
-				return E_EWRITE;
+
+				if (errorOccurred) {
+					f_unlink(targetPath.c_str());
+					f_mount(nullptr, lv_drv_num.c_str(), 0);
+					return E_EWRITE;
+				}
 			}
 		}
+		catch (...) {
+			// Unmount filesystem in case of any unexpected errors
+			f_mount(nullptr, lv_drv_num.c_str(), 0);
+			return E_UNKNOWN_FORMAT;
+		}
 
-		fclose(srcFile);
-		f_close(&dstFile);
-		f_mount(nullptr, "", 0);
-
-		//char* fileToAdd = AddList;
-
-		////create file with FATFS 
-		//FRESULT fr;
-		//FIL file;
-		//char fullPath[MAX_PATH];
-
-
-		//if (fr != FR_OK) {
-		//	// File doesn't exist, create new
-		//	fr = f_open(&file, PackedFile, FA_CREATE_ALWAYS | FA_WRITE);
-		//	if (fr != FR_OK) {
-		//		return E_ECREATE;  // Couldn't open file
-		//	
-		//}
-
+		f_mount(nullptr, lv_drv_num.c_str(), 0);
 
 		return 0;
 	}
+		
+	DLLEXPORT int STDCALL DeleteFiles(char *PackedFile, char *DeleteList) {
 
-	DLLEXPORT int STDCALL DeleteFiles(char* PackedFile, char* DeleteList) {
-		std::string log_path = "D:\\temp\\log_file1.txt";
+		//DEBUG PRINT, DON'T FORGET TO DELETE
+		std::string log_path = "D:\\log_file.txt";
 
 
 		std::FILE* cf = std::fopen(log_path.data(), "a");
@@ -1753,8 +1900,33 @@ extern "C" {
 		fprintf(cf, "Returning : 0\n");
 		std::fclose(cf);
 
+		int logical_drive_number = 3;
+
+		if (disks_size >= 2) {
+
+			if (DeleteList && std::strlen(DeleteList) >= 2) {
+				char drive_letter = toupper(DeleteList[0]);
+
+			    if (drive_letter >= 'C' && drive_letter <= 'F' && DeleteList[1] == '\\') {
+				   logical_drive_number = drive_letter - 'C';
+			    }
+			    else {
+				  fprintf(cf, "Invalid drive prefix in DeleteList: %c\n", DeleteList[0]);
+				  std::fclose(cf);
+				  return E_ECLOSE;
+			     }
+			}
+			else {
+				// to not delete a disk
+				fprintf(cf, "DeleteList does not specify a valid drive or path\n");
+				std::fclose(cf);
+				return E_ECLOSE;
+			}
+		}
 		FATFS fs;
-		FRESULT fr = f_mount(&fs, "", 1);
+		std::string lv_drv_num = std::string(1, '0' + logical_drive_number) + ":";
+
+		FRESULT fr = f_mount(&fs, lv_drv_num.c_str(), 1);
 		if (fr != FR_OK) {
 			return E_NOT_SUPPORTED;
 		}
@@ -1788,109 +1960,78 @@ extern "C" {
 			return f_unlink(path);
 			};
 
-		std::string deletePath = DeleteList;
-		if (deletePath.size() >= 2) {
-			bool isDirectoryDelete = false;
 
-			if (deletePath.size() >= 3 && deletePath.substr(deletePath.size() - 3) == "*.*") {
-				isDirectoryDelete = true;
-			}
+		//implementing multiple files delete:
 
-			// If it's a directory delete command, truncate the path
-			if (isDirectoryDelete) {
-				size_t lastSlash = deletePath.find_last_of("\\/");
-				if (lastSlash != std::string::npos) {
-					deletePath = deletePath.substr(0, lastSlash);
+		bool anyFailed = false;
+
+		char* current = DeleteList;
+
+		while (*current != '\0') {
+			std::string deletePath = current;
+			fprintf(cf, "  DeleteList entry: %s\n", deletePath.c_str());
+
+			if (disks_size >= 2) {
+
+				if (deletePath.size() >= 2 && deletePath[1] == '\\') {
+					deletePath = deletePath.substr(2);
 				}
 			}
+
+			if (deletePath.size() >= 2) {
+				bool isDirectoryDelete = false;
+
+				if (deletePath.size() >= 3 && deletePath.substr(deletePath.size() - 3) == "*.*") {
+					isDirectoryDelete = true;
+				}
+
+				// If it's a directory delete command, truncate the path
+				if (isDirectoryDelete) {
+					size_t lastSlash = deletePath.find_last_of("\\/");
+					if (lastSlash != std::string::npos) {
+						deletePath = deletePath.substr(0, lastSlash);
+					}
+				}
+			}
+
+			deletePath = lv_drv_num + "/" + deletePath;
+
+			FILINFO info;
+			fr = f_stat(deletePath.c_str(), &info);
+			if (fr != FR_OK) {
+				fprintf(cf, "f_stat failed on %s\n", DeleteList);
+				std::fclose(cf);
+				return E_ECLOSE;
+			}
+
+			if (info.fattrib & AM_DIR) {
+				fr = recursive_del(deletePath.c_str(), recursive_del); // if it's a dir del recursive
+			}
+			else {
+				fr = f_unlink(deletePath.c_str()); // unlink the file
+			}
+
+
+
+			if (fr != FR_OK) {
+				// Log failure and return an error code
+				fprintf(cf, "Failed to delete: %s\n", deletePath.c_str());
+				anyFailed = true;
+			}
+			else {
+				// Log success for each deleted file
+				fprintf(cf, "Successfully deleted file: %s\n", deletePath.c_str());
+			}
+			current += strlen(current) + 1; // move onto next file
 		}
 
-		FILINFO info;
-		fr = f_stat(deletePath.c_str(), &info);
-		if (fr != FR_OK) {
-			fprintf(cf, "f_stat failed on %s\n", DeleteList);
-			std::fclose(cf);
-			return E_ECLOSE;
-		}
+		f_mount(nullptr, lv_drv_num.c_str(), 0);
+		fprintf(cf, "Returning : %d\n", anyFailed ? E_ECLOSE : 0);
+		std::fclose(cf);
 
-		if (info.fattrib & AM_DIR) {
-			fr = recursive_del(deletePath.c_str(), recursive_del); // if it's a dir del recursive
-		}
-		else {
-			fr = f_unlink(deletePath.c_str()); // unlink the file
-		}
-
-
-
-		if (fr != FR_OK) {
-			// Log failure and return an error code
-			fprintf(cf, "Failed to delete file: %s\n", deletePath.c_str());
-			std::fclose(cf);
-			return E_ECLOSE;
-		}
-		else {
-			// Log success for each deleted file
-			fprintf(cf, "Successfully deleted file: %s\n", deletePath.c_str());
-		}
-
-		f_mount(nullptr, "", 0);
-
-		return 0;
+		return anyFailed ? E_ECLOSE : 0;
 
 	}
-
-	//DLLEXPORT int STDCALL StartMemPack(int Options, char* FileName) {
-	//	std::string log_path = "E:\\log_file.txt";
-
-
-	//	std::FILE* cf = std::fopen(log_path.data(), "a");
-
-	//	//std::ofstream cf{ config_file_path.data() };
-	//	if (!cf) {
-	//		return false;
-	//	}
-	//	fprintf(cf, "[FAT_disk_img_plugin]\n");
-	//	fprintf(cf, "[StartMemPack] Called with :\n  PackedFile : \n  DeleteList :\n  Returning : E_NOT_SUPPORTED\n");
-	//	std::fclose(cf);
-
-	//	return 0;
-	//}
-	//
-	//DLLEXPORT int STDCALL PackToMem(int hMemPack, char* BufIn, int InLen, int* Taken, char* BufOut,
-	//	int OutLen, int* Written, int SeekBy) {
-	//	std::string log_path = "E:\\log_file.txt";
-
-
-	//	std::FILE* cf = std::fopen(log_path.data(), "a");
-
-	//	//std::ofstream cf{ config_file_path.data() };
-	//	if (!cf) {
-	//		return false;
-	//	}
-	//	fprintf(cf, "[FAT_disk_img_plugin]\n");
-	//	fprintf(cf, "[PackToMem] Called with :\n  PackedFile : \n  DeleteList :\n  Returning : E_NOT_SUPPORTED\n");
-	//	std::fclose(cf);
-
-	//	return 0;
-	//};
-
-	//DLLEXPORT int STDCALL DoneMemPack(int hMemPack) {
-
-	//	std::string log_path = "E:\\log_file.txt";
-
-
-	//	std::FILE* cf = std::fopen(log_path.data(), "a");
-
-	//	//std::ofstream cf{ config_file_path.data() };
-	//	if (!cf) {
-	//		return false;
-	//	}
-	//	fprintf(cf, "[FAT_disk_img_plugin]\n");
-	//	fprintf(cf, "[DoneMemPack] Called with :\n  PackedFile : \n  DeleteList :\n  Returning : E_NOT_SUPPORTED\n");
-	//	std::fclose(cf);
-
-	//	return 0;
-	//};
 
 	//DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
 	//	std::string log_path = "E:\\log_file.txt";
