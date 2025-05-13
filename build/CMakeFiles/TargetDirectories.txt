@@ -1,3 +1,0 @@
-D:/APPS_UCU/Projects/C++/FAT_Image_TCMD_plugin_write/build/CMakeFiles/fatimg_wcx.dir
-D:/APPS_UCU/Projects/C++/FAT_Image_TCMD_plugin_write/build/CMakeFiles/ALL_BUILD.dir
-D:/APPS_UCU/Projects/C++/FAT_Image_TCMD_plugin_write/build/CMakeFiles/ZERO_CHECK.dir
