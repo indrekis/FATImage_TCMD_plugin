@@ -1,0 +1,85 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\FAT_definitions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\fatimg_wcx.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\sysio_winapi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\string_tools.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\plugin_config.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\diskio.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\ff.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\ffsystem.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\ffunicode.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\FAT_definitions.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\minimal_fixed_string.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\sysio_winapi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\wcxhead.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\string_tools.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\plugin_config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\diskio.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\ff.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\ffconf.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\fatimg_64.def">
+      <Filter>Source Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="D:\APPS_UCU\Projects\C++\FAT_Image_TCMD_plugin_write\main_resources.rc">
+      <Filter>Source Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{26113F75-FCE9-3202-8578-687B93B97636}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{0B9BEA48-821B-361F-970E-5F77B880B1E6}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
