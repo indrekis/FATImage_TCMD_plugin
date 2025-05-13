@@ -1373,6 +1373,7 @@ extern "C" {
     {0, 1}, // partition 1 on drive 0
     {0, 2}, // partition 2 on drive 0
     {0, 3}, // partition 3 on drive 0
+	{0, 4}, // partition 4 on drive 0
 	{1, 0}
 	};
 
@@ -1750,7 +1751,7 @@ extern "C" {
 
 		FATFS fs;
 		FRESULT fr;
-		int logical_drive_number = 3;
+		int logical_drive_number = 4;
 		char drive_letter;
 
 		if (disks_size >= 2) {
@@ -1900,7 +1901,7 @@ extern "C" {
 		fprintf(cf, "Returning : 0\n");
 		std::fclose(cf);
 
-		int logical_drive_number = 3;
+		int logical_drive_number = 4;
 
 		if (disks_size >= 2) {
 
