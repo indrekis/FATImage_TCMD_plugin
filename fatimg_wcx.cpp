@@ -892,6 +892,7 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 			auto& newentryref = arc_dir_entries.back();
 			newentryref.FileAttr = sector[entry_in_cluster].DIR_Attr;
 			newentryref.PathName.push_back(root); // Empty root is OK, "\\" OK too
+			uint32_t invalid_chars = 0;
 			if (plugin_config.use_VFAT && current_LFN.are_processing()) {
 				if (current_LFN.cur_LFN_CRC == VFAT_LFN_dir_entry_t::LFN_checksum(sector[entry_in_cluster].DIR_Name)) {
 					newentryref.PathName.push_back(current_LFN.cur_LFN_name);
@@ -900,7 +901,7 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 					auto res = sector[entry_in_cluster].process_E5();
 					if(!res)
 						plugin_config.log_print_dbg("Warning# E5 occurred at first symbol.");
-					auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);					
+					invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);					
 					// No OS/2 EA on FAT32
 				}
 				current_LFN.abort_processing();
@@ -909,7 +910,7 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 				auto res = sector[entry_in_cluster].process_E5(); 
 				if (!res)
 					plugin_config.log_print_dbg("Warning# E5 occurred at first symbol.");
-				auto invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
+				invalid_chars = sector[entry_in_cluster].dir_entry_name_to_str(newentryref.PathName);
 				if (invalid_chars == FATxx_dir_entry_t::LLDE_OS2_EA) {
 					plugin_config.log_print_dbg("Info# OS/2 Extended attributes found.");
 					has_OS2_EA = true;
@@ -931,7 +932,13 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 				(newentryref.FirstClus < max_cluster_FAT()) && (newentryref.FirstClus > 0x1)
 				&& (depth <= max_depth))
 			{
-				load_file_list_recursively(newentryref.PathName, newentryref.FirstClus, depth + 1);
+				if(invalid_chars > 0 && invalid_chars != FATxx_dir_entry_t::LLDE_OS2_EA) {
+					plugin_config.log_print_dbg("Warning# Invalid characters in directory name: %s, skipping", newentryref.PathName.data());
+				}
+				else {
+					load_file_list_recursively(newentryref.PathName, newentryref.FirstClus, depth + 1);
+				}
+				
 			}
 			++entry_in_cluster;
 		}
