@@ -308,6 +308,9 @@ struct FATxx_dir_entry_t
 		return combine(DIR_WrtDate, DIR_WrtTime);
 	}
 
+	// TODO: Extend checks for valid characters according to the following:
+	// FAT12/16: the legal characters: 0-9 A-Z ! # $ % & ' ( ) - @ ^ _ ` { } ~, chars from \x80 to \xFF. 
+	// VFAT: also + , ; = [ ], space in the middle and symbols U+000080 to U+10FFFF 
 	static constexpr char non_valid_chars[] = R"("*+,./:;<=>?[\]|)";
 	static int is_valid_char(char mychar)
 	{
