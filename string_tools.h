@@ -33,6 +33,9 @@ auto from_str(const std::string& arg){
     else if constexpr (std::is_same_v<T, int>) {
         res = std::stoi(arg, &last_sym);
     }
+    else if constexpr (std::is_same_v<T, unsigned int>) {
+        res = std::stoul(arg, &last_sym);
+    }
     else if constexpr (std::is_same_v<T, std::remove_cvref_t<decltype(arg)>>) {
         return arg; 
     }
