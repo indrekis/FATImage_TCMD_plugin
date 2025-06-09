@@ -288,6 +288,7 @@
     <ClInclude Include="FAT_definitions.h" />
     <ClInclude Include="minimal_fixed_string.h" />
     <ClInclude Include="plugin_config.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="string_tools.h" />
     <ClInclude Include="sysio_winapi.h" />
     <ClInclude Include="wcxhead.h" />

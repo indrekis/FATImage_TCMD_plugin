@@ -1,6 +1,6 @@
 //{{NO_DEPENDENCIES}}
-// Microsoft Developer Studio generated include file.
-// Used by Script1.rc
+// Microsoft Visual C++ generated include file.
+// Used by main_resources.rc
 //
 
 // Next default values for new objects

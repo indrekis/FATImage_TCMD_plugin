@@ -8,7 +8,6 @@
 // Generated from the TEXTINCLUDE 2 resource.
 //
 #include "afxres.h"
-//#include "windows.h"
 
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
@@ -26,8 +25,8 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,9,9,0
- PRODUCTVERSION 0,9,9,0
+ FILEVERSION 0,9,9,9
+ PRODUCTVERSION 0,9,9,9
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x29L
@@ -45,14 +44,14 @@ BEGIN
             VALUE "Comments", "FAT image unpacking plugin for Total Commander"
             VALUE "CompanyName", "Indrekis"
             VALUE "FileDescription", "FAT images wcx plugin for Total Commander"
-            VALUE "FileVersion", "0.9.9.0"
+            VALUE "FileVersion", "0.9.9.9"
             VALUE "InternalName", "N/A"
-            VALUE "LegalCopyright", "Copyright © 2022 by Oleg Farenyuk, 2002 by IvGzury"
+            VALUE "LegalCopyright", "Copyright © 2022-2025 by Oleg Farenyuk, 2002 by IvGzury"
             VALUE "LegalTrademarks", "N/A"
             VALUE "OriginalFilename", "img.wcx64"
             VALUE "PrivateBuild", "N/A"
             VALUE "ProductName", "TCmd FAT images wcx plugin"
-            VALUE "ProductVersion", "0.99 beta"
+            VALUE "ProductVersion", "0.999 beta"
             VALUE "SpecialBuild", "N/A"
         END
     END
