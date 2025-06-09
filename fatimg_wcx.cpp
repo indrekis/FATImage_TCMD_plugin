@@ -775,7 +775,7 @@ int FAT_image_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 			if (remaining > get_cluster_size()) { remaining -= get_cluster_size(); } //-V104 //-V101
 			else { remaining = 0; }
 
-			nextclus = next_cluster_FAT(nextclus);
+			nextclus = next_cluster_FAT(nextclus); // TODO: fix if too large cluster number
 		}
 		return 0;
 	}
@@ -821,7 +821,7 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 		firstclus = bootsec.EBPB_FAT32.BS_RootFirstClus; 
 	}
 
-	constexpr auto max_depth = 100;
+	constexpr auto max_depth = 50;
 
 	size_t portion_size = 0;
 	if (firstclus == 0)
@@ -945,10 +945,12 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 			if (firstclus >= max_normal_cluster_FAT() && !is_end_of_chain_FAT(firstclus)) {
 				plugin_config.log_print_dbg("Warning# Unusual next "
 					"clusters number: %d of %d", firstclus, max_normal_cluster_FAT());
+				break; 
 			}
 			if ((firstclus <= 1) || ( (firstclus >= max_cluster_FAT()) && !is_end_of_chain_FAT(firstclus)) ) {
 				plugin_config.log_print_dbg("Error# Wrong next "
 					"clusters number: %d of 2-%d", firstclus, max_cluster_FAT());
+				break;
 			}
 			if (is_end_of_chain_FAT(firstclus)) {
 				break;
@@ -987,6 +989,10 @@ uint32_t FAT_image_t::get_first_cluster(const FATxx_dir_entry_t& dir_entry) cons
 uint32_t FAT_image_t::next_cluster_FAT12(uint32_t firstclus) const
 {
 	const auto FAT_byte_pre = fattable.data() + ((firstclus * 3) >> 1); // firstclus + firstclus/2 //-V104
+	if (FAT_byte_pre >= fattable.data() + fattable.size()){
+		plugin_config.log_print_dbg("Warning# Too large cluster number %u of %zu present", (3 * fattable.size()) / 2);
+		return max_cluster_FAT(FAT12_type);
+	}
 	//! Extract word, containing next cluster:
 	const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
 	// Extract correct 12 bits -- lower for odd, upper for even: 
@@ -996,6 +1002,10 @@ uint32_t FAT_image_t::next_cluster_FAT12(uint32_t firstclus) const
 uint32_t FAT_image_t::next_cluster_FAT16(uint32_t firstclus) const
 {
 	const auto FAT_byte_pre = fattable.data() + static_cast<size_t>(firstclus) * 2; 
+	if( FAT_byte_pre >= fattable.data()+ fattable.size() ) {
+		plugin_config.log_print_dbg("Warning# Too large cluster number %u of %zu present", fattable.size()/2);
+		return max_cluster_FAT(FAT16_type); 
+	}
 	const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
 	return *word_ptr;
 }
@@ -1003,6 +1013,10 @@ uint32_t FAT_image_t::next_cluster_FAT16(uint32_t firstclus) const
 uint32_t FAT_image_t::next_cluster_FAT32(uint32_t firstclus) const
 {
 	const auto FAT_byte_pre = fattable.data() + static_cast<size_t>(firstclus) * 4; //-V112
+	if (FAT_byte_pre >= fattable.data() + fattable.size()) {
+		plugin_config.log_print_dbg("Warning# Too large cluster number %u of %zu present", fattable.size() / 4);
+		return max_cluster_FAT(FAT32_type);
+	}
 	const uint32_t* word_ptr = reinterpret_cast<const uint32_t*>(FAT_byte_pre); //-V206
 	return (*word_ptr) & 0x0F'FF'FF'FF; // Zero upper 4 bits
 }
@@ -1247,6 +1261,7 @@ int whole_disk_t::process_MBR() {
 					// EBR next starting sector = LBA address of next EBR minus LBA address of extended partition's first EBR
 					// EBR next size starts counts from the next EBR:
 					EBR_offset = mbrs.back().ptable[1].get_first_sec_by_LBA();
+					// Note: CHS addresses are absolute, while LBA -- relative to the EBR start 
 				}
 			}
 			else {
