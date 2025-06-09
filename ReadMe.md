@@ -90,6 +90,9 @@ debug_level=0
   * Additionally, for the debug builds (without NDEBUG defined), important image analysis events are logged to the debugger console. In addition to using a full-fledged debugger, debugging output can be seen using [SimpleProgramDebugger](http://www.nirsoft.net/utils/simple_program_debugger.html).
 * `log_file_path=<filename>` -- logging filename. If opening this file for writing fails, logging is disabled (allow_txt_log==0). The file is created from scratch at the first use of the plugin during the current TCmd session. 
 * `debug_level` -- not used now. 
+* `max_depth` -- maximum depth of the directory tree to be traversed. 
+* `max_invalid_chars_in_dir` -- maximum number of invalid characters in the directory name. If the number of invalid characters exceeds this value, the directory is not opened and is presented as empty. Useful for the corrupted images. 
+  * Value above 11 effectively disables this check.
 
 Compilation
 ===========
