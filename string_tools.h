@@ -1,4 +1,5 @@
 /*
+* Floppy disk images unpack plugin for the Total Commander.
 * Copyright (c) 2017-2022, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
 *
 * The code is released under the MIT License.

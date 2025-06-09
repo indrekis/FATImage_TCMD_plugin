@@ -3,7 +3,7 @@
 /*
 * Floppy disk images unpack plugin for the Total Commander.
 * Copyright (c) 2002, IvGzury ( ivgzury@hotmail.com )
-* Copyright (c) 2022, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
+* Copyright (c) 2022-2025, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
 *
 * Oleg Farenyuk's code is released under the MIT License.
 *
