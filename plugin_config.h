@@ -42,6 +42,10 @@ struct plugin_config_t {
 										   // search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA
 	size_t search_for_boot_sector_range = 64 * 1024;
 
+	size_t max_depth = 100; // Maximum recursion depth for the FAT directory tree
+
+	size_t max_invalid_chars_in_dir = 0; // Values above 11 efficiently disable the check for invalid characters in directory names
+
 	//! Enum is not convenient here because of I/O
 	static constexpr int NO_DEBUG     = 0;
 	static constexpr int DEBUGGER_MSG = 1;

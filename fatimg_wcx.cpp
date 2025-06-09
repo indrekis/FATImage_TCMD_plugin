@@ -820,9 +820,7 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 		// For exotic implementations, if BS_RootFirstClus == 0, will behave as expected
 		firstclus = bootsec.EBPB_FAT32.BS_RootFirstClus; 
 	}
-
-	constexpr auto max_depth = 50;
-
+	
 	size_t portion_size = 0;
 	if (firstclus == 0)
 	{   // Read whole FAT12/16 dir at once
@@ -924,15 +922,15 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 			if (sector[entry_in_cluster].is_dir_record_dir()) {
 				newentryref.PathName.push_back('\\'); // Neccessery for empty dirs to be "enterable"
 			}
-			if (depth > max_depth) {
+			if (depth > plugin_config.max_depth) {
 				plugin_config.log_print_dbg("Too many nested directories: %d.", depth);
 				break;
 			}
 			if (sector[entry_in_cluster].is_dir_record_dir() &&
 				(newentryref.FirstClus < max_cluster_FAT()) && (newentryref.FirstClus > 0x1)
-				&& (depth <= max_depth))
+				&& (depth <= plugin_config.max_depth))
 			{
-				if(invalid_chars > 0 && invalid_chars != FATxx_dir_entry_t::LLDE_OS2_EA) {
+				if(invalid_chars > plugin_config.max_invalid_chars_in_dir && invalid_chars != FATxx_dir_entry_t::LLDE_OS2_EA) {
 					plugin_config.log_print_dbg("Warning# Invalid characters in directory name: %s, skipping", newentryref.PathName.data());
 				}
 				else {
