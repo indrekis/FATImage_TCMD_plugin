@@ -127,6 +127,9 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
         allow_txt_log = get_option_from_map<decltype(allow_txt_log)>("allow_txt_log"s);
         debug_level = get_option_from_map<decltype(debug_level)>("debug_level"s);
 
+		max_depth = get_option_from_map<decltype(max_depth)>("max_depth"s);
+		max_invalid_chars_in_dir = get_option_from_map<decltype(max_invalid_chars_in_dir)>("max_invalid_chars_in_dir"s);
+
         if (allow_txt_log && log_file_path.is_empty()) {
             auto tstr = get_option_from_map<std::string>("log_file_path"s);
             log_file_path.clear();
@@ -171,17 +174,20 @@ bool plugin_config_t::write_conf()
     fprintf(cf, "use_VFAT=%x\n", use_VFAT);
     fprintf(cf, "process_DOS1xx_images=%x\n", process_DOS1xx_images);
     fprintf(cf, "process_MBR=%x\n", process_MBR);
-    fprintf(cf, "# Highly specialized exceptions for the popular images found on the Internet:\n");
+    fprintf(cf, "# Highly specialized exceptions for the popular ancient images found on the Internet:\n");
     fprintf(cf, "process_DOS1xx_exceptions=%x\n", process_DOS1xx_exceptions);
     fprintf(cf, "# WinImage-like behavior -- if boot is not on the beginning of the file, \n");
-    fprintf(cf, "# # search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA\n");
+    fprintf(cf, "# search it by the pattern 0xEB 0xXX 0x90 .... 0x55 0xAA\n");
     fprintf(cf, "search_for_boot_sector=%x\n", search_for_boot_sector);
-    fprintf(cf, "search_for_boot_sector_range=%zx\n", search_for_boot_sector_range);
+    fprintf(cf, "search_for_boot_sector_range=%zu\n", search_for_boot_sector_range);
     fprintf(cf, "allow_dialogs=%x\n", allow_dialogs);
     fprintf(cf, "allow_txt_log=%x\n", allow_txt_log);
     log_file_path.push_back("D:\\Temp\\fatimg.txt");
     fprintf(cf, "log_file_path=%s\n", log_file_path.data());
-    fprintf(cf, "debug_level=%x\n\n", debug_level);
+    fprintf(cf, "debug_level=%d\n", debug_level);
+    fprintf(cf, "max_depth=%zu\n", max_depth);
+    fprintf(cf, "# Values above the 11 efficiently disables the check. Beware of special value LLDE_OS2_EA = 0xFFFF\n");
+    fprintf(cf, "max_invalid_chars_in_dir=%zu\n", max_invalid_chars_in_dir);
 
     std::fclose(cf);
     return true;
