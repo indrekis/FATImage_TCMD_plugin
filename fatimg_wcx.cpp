@@ -995,7 +995,7 @@ uint32_t FAT_image_t::next_cluster_FAT12(uint32_t firstclus) const
 {
 	const auto FAT_byte_pre = fattable.data() + ((firstclus * 3) >> 1); // firstclus + firstclus/2 //-V104
 	if (FAT_byte_pre >= fattable.data() + fattable.size()){
-		plugin_config.log_print_dbg("Warning# Too large cluster number %u of %zu present", (3 * fattable.size()) / 2);
+		plugin_config.log_print_dbg("Warning# Too large cluster number %u of %zu present", firstclus, (3 * fattable.size())/2);
 		return max_cluster_FAT(FAT12_type);
 	}
 	//! Extract word, containing next cluster:
@@ -1007,8 +1007,8 @@ uint32_t FAT_image_t::next_cluster_FAT12(uint32_t firstclus) const
 uint32_t FAT_image_t::next_cluster_FAT16(uint32_t firstclus) const
 {
 	const auto FAT_byte_pre = fattable.data() + static_cast<size_t>(firstclus) * 2; 
-	if( FAT_byte_pre >= fattable.data()+ fattable.size() ) {
-		plugin_config.log_print_dbg("Warning# Too large cluster number %u of %zu present", fattable.size()/2);
+	if( FAT_byte_pre >= fattable.data() + fattable.size() ) {
+		plugin_config.log_print_dbg("Warning# Too large cluster number %u of %zu present", firstclus, fattable.size()/2);
 		return max_cluster_FAT(FAT16_type); 
 	}
 	const uint16_t* word_ptr = reinterpret_cast<const uint16_t*>(FAT_byte_pre);
@@ -1019,7 +1019,7 @@ uint32_t FAT_image_t::next_cluster_FAT32(uint32_t firstclus) const
 {
 	const auto FAT_byte_pre = fattable.data() + static_cast<size_t>(firstclus) * 4; //-V112
 	if (FAT_byte_pre >= fattable.data() + fattable.size()) {
-		plugin_config.log_print_dbg("Warning# Too large cluster number %u of %zu present", fattable.size() / 4);
+		plugin_config.log_print_dbg("Warning# Too large cluster number %u of %zu present", firstclus, fattable.size()/4);
 		return max_cluster_FAT(FAT32_type);
 	}
 	const uint32_t* word_ptr = reinterpret_cast<const uint32_t*>(FAT_byte_pre); //-V206
