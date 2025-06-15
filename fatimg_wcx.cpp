@@ -306,7 +306,7 @@ struct whole_disk_t {
 	int process_volumes();
 
 	//! Error handler for safe functions:
-	_invalid_parameter_handler oldHandler;
+	_invalid_parameter_handler oldHandler = nullptr;
 };
 
 //------- FAT_image_t implementation -----------------------------
@@ -928,7 +928,7 @@ int FAT_image_t::load_file_list_recursively(minimal_fixed_string_t<MAX_PATH> roo
 			}
 			if (sector[entry_in_cluster].is_dir_record_dir() &&
 				(newentryref.FirstClus < max_cluster_FAT()) && (newentryref.FirstClus > 0x1)
-				&& (depth <= plugin_config.max_depth))
+				&& (depth <= plugin_config.max_depth))  //-V560 // Always true after the previous if, but leaving it here for clarity
 			{
 				if(invalid_chars > plugin_config.max_invalid_chars_in_dir && invalid_chars != FATxx_dir_entry_t::LLDE_OS2_EA) {
 					plugin_config.log_print_dbg("Warning# Invalid characters in directory name: %s, skipping", newentryref.PathName.data());
@@ -1324,7 +1324,7 @@ int whole_disk_t::process_volumes() {
 				}
 			}
 			else {
-				err_code = E_UNKNOWN_FORMAT;
+				err_code = E_UNKNOWN_FORMAT; //-V1048
 			}
 		}
 	}
