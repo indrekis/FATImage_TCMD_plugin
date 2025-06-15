@@ -20,6 +20,13 @@ file_handle_t open_file_shared_read(const char* filename) {
 	return handle;
 }
 
+//! Opens for reading but allows writing by others
+file_handle_t open_file_read_shared_write(const char* filename) {
+	file_handle_t handle;
+	handle = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+	return handle;
+}
+
 file_handle_t open_file_write(const char* filename) {
 	file_handle_t handle;
 	handle = CreateFile(filename, GENERIC_WRITE | FILE_APPEND_DATA, FILE_SHARE_READ, 0, CREATE_NEW, 0, 0);
@@ -34,7 +41,12 @@ file_handle_t open_file_overwrite(const char* filename) {
 
 //! Returns true if success
 bool close_file(file_handle_t handle) {
-	return CloseHandle(handle);
+	// TODO: костиль, пофіксити, коли виправлю TODO в DeleteFiles
+	BY_HANDLE_FILE_INFORMATION info;
+	if (GetFileInformationByHandle(handle, &info)) {
+		return CloseHandle(handle);
+	}
+	else return true;
 }
 
 bool flush_file(file_handle_t handle) {

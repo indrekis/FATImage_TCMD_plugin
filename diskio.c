@@ -124,6 +124,7 @@ DRESULT disk_read (
     //printf("  count  = %u\n", count);
 
     FILE* fp = fopen(drives, "rb");
+    int tt = errno; 
     if (fp == NULL) {
         printf("Error: Failed to open file %s\n", drives);
         return RES_ERROR;

@@ -271,8 +271,8 @@ struct whole_disk_t {
 	int openmode_m = PK_OM_LIST;
 	size_t image_file_size = 0;
 
-	tChangeVolProc   pLocChangeVol = nullptr;
-	tProcessDataProc pLocProcessData = nullptr;
+	static tChangeVolProc   pLocChangeVol;
+	static tProcessDataProc pLocProcessData;
 
 	whole_disk_t(const char* archname_in, size_t vol_size, file_handle_t fh, int openmode):
 		hArchFile{ fh }, openmode_m(openmode), image_file_size(vol_size)
@@ -320,6 +320,10 @@ struct whole_disk_t {
 	//! Error handler for safe functions:
 	_invalid_parameter_handler oldHandler = nullptr;
 };
+
+tChangeVolProc   whole_disk_t::pLocChangeVol = nullptr;
+tProcessDataProc whole_disk_t::pLocProcessData = nullptr;
+
 
 //------- FAT_image_t implementation -----------------------------
 // Though using methods of the whole_disk_t would be more OOP-style, code verbosity becomes too large for me (Indrekis)
@@ -1363,17 +1367,6 @@ extern "C" {
 	// https://learn.microsoft.com/en-us/cpp/c-runtime-library/parameter-validation?view=msvc-170
 	// https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/strcpy-s-wcscpy-s-mbscpy-s?view=msvc-170
 
-	char drives[MAX_PATH] ; //open file pathes
-	int disks_size = 0;
-
-	PARTITION VolToPart[] = {
-    {0, 1}, // partition 1 on drive 0
-    {0, 2}, // partition 2 on drive 0
-    {0, 3}, // partition 3 on drive 0
-	{0, 4}, // partition 4 on drive 0
-	{1, 0}
-	};
-
 	void myInvalidParameterHandler(const wchar_t* expression,
 		const wchar_t* function,
 		const wchar_t* file,
@@ -1470,7 +1463,6 @@ extern "C" {
 			std::string temp_str = path.generic_string();
 			strncpy(drives, temp_str.c_str(), MAX_PATH); //adds the file-folder path to the drives list - shared between dikio.c and fatimg_wcx.cpp
 
-			disks_size = arch->disks.size();
 			ArchiveData->OpenResult = 0; // OK
 			return arch.release(); // Returns raw ptr and releases ownership 
 		}
@@ -1599,13 +1591,15 @@ extern "C" {
 	// This function allows you to notify user about changing a volume when packing files
 	DLLEXPORT void STDCALL SetChangeVolProc(archive_HANDLE hArcData, tChangeVolProc pChangeVolProc)
 	{
-		hArcData->pLocChangeVol = pChangeVolProc; // Was commented in Nataliia code 
+		// Can be called while hArcData is not initialized yet, so made it static
+		hArcData->pLocChangeVol = pChangeVolProc; 
 	}
 
 	// This function allows you to notify user about the progress when you un/pack files
 	DLLEXPORT void STDCALL SetProcessDataProc(archive_HANDLE hArcData, tProcessDataProc pProcessDataProc)
 	{
-		hArcData->pLocProcessData = pProcessDataProc; // Was commented in Nataliia code 
+		// Can be called while hArcData is not initialized yet, so made it static
+		hArcData->pLocProcessData = pProcessDataProc; 
 	}
 
 	// PackSetDefaultParams is called immediately after loading the DLL, before any other function. 
@@ -1641,6 +1635,7 @@ extern "C" {
 		return is_OK;
 	}
 
+	//! TODO: Remove new (or implement creation later?) (TO implement, use pre-created empty images?)
 	DLLEXPORT int STDCALL GetPackerCaps() {
 		return PK_CAPS_NEW | PK_CAPS_MODIFY | PK_CAPS_DELETE | PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_MULTIPLE;
 	}
@@ -1721,6 +1716,16 @@ extern "C" {
 		return overallResult;
 	}
 
+	char drives[MAX_PATH]; //open file pathes
+
+	PARTITION VolToPart[] = {
+	{0, 1}, // partition 1 on drive 0
+	{0, 2}, // partition 2 on drive 0
+	{0, 3}, // partition 3 on drive 0
+	{0, 4}, // partition 4 on drive 0
+	{1, 0}
+	};
+
 	//// write-mode functions
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
 
@@ -1751,7 +1756,26 @@ extern "C" {
 		int logical_drive_number = 4;
 		char drive_letter;
 
-		if (disks_size >= 2) {
+		size_t image_file_size = get_file_size(PackedFile);
+		auto hArchFile = open_file_read_shared_write(PackedFile);
+		if( hArchFile == file_open_error_v )
+		{
+			return E_EREAD;
+		}
+		// Caching results here would complicate code too much as for now
+		whole_disk_t arch{ PackedFile, image_file_size,
+				hArchFile, PK_OM_LIST };
+
+		auto err_code = arch.process_volumes();
+		if( err_code != 0 )
+		{
+			return E_EREAD;
+		}
+
+		//! TODO: -- див. опис в DeleteFiles біля такого ж рядка.
+		close_file(hArchFile);
+
+		if (arch.disks.size() >= 2) {
 			if (SubPath != NULL) {
 				drive_letter = toupper(SubPath[0]);
 
@@ -1789,7 +1813,7 @@ extern "C" {
 
 				std::string srcFullPath = std::string(SrcPath) + current;
 
-				if (disks_size >= 2) {
+				if( arch.disks.size() >= 2) {
 					if (current[1] == '\\' && current[0] >= 'C' && current[0] <= 'F') {
 						current += 2;
 					}
@@ -1799,7 +1823,7 @@ extern "C" {
 				if (SubPath && std::strlen(SubPath) > 0) {
 					targetPath = std::string(SubPath) + "/" + current;
 
-					if (disks_size >= 2) {
+					if (arch.disks.size() >= 2) {
 						if (targetPath.size() >= 2 && targetPath[1] == '\\') {
 							targetPath = targetPath.substr(2);
 						}
@@ -1900,7 +1924,29 @@ extern "C" {
 
 		int logical_drive_number = 4;
 
-		if (disks_size >= 2) {
+		size_t image_file_size = get_file_size(PackedFile);
+		auto hArchFile = open_file_read_shared_write(PackedFile);
+		if (hArchFile == file_open_error_v)
+		{
+			return E_EREAD;
+		}
+		// Caching results here would complicate code too much as for now
+		whole_disk_t arch{ PackedFile, image_file_size,
+				hArchFile, PK_OM_LIST };
+
+		auto err_code = arch.process_volumes();
+		if (err_code != 0)
+		{
+			return E_EREAD;
+		}
+
+		//! TODO: Чомусь не працює спільне використання -- fopen() фейлиться з кодом 22.
+		//! Тимчасово закриваю, хоча це ламає інваріант whole_disk_t. 
+		//! Після переписання diskio.c, проблема мала б зникнути
+		close_file(hArchFile);
+
+
+		if (arch.disks.size() >= 2) {
 
 			if (DeleteList && std::strlen(DeleteList) >= 2) {
 				char drive_letter = toupper(DeleteList[0]);
@@ -1969,7 +2015,7 @@ extern "C" {
 			std::string deletePath = current;
 			fprintf(cf, "  DeleteList entry: %s\n", deletePath.c_str());
 
-			if (disks_size >= 2) {
+			if (arch.disks.size() >= 2) {
 
 				if (deletePath.size() >= 2 && deletePath[1] == '\\') {
 					deletePath = deletePath.substr(2);

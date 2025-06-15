@@ -29,6 +29,7 @@ using file_handle_t = HANDLE;
 
 // All functions returning bool returns true on success
 file_handle_t open_file_shared_read(const char* filename);
+file_handle_t open_file_read_shared_write(const char* filename);
 file_handle_t open_file_write(const char* filename);
 file_handle_t open_file_overwrite(const char* filename);
 bool close_file(file_handle_t handle);
