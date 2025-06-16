@@ -1329,7 +1329,7 @@ int whole_disk_t::process_volumes() {
 						plugin_config.log_print_dbg("Warning# Error processing partition %zd: %d", i, first_err_code);
 					else
 						plugin_config.log_print("Info# Processed partition %zd, offset: 0x%010X", i,
-							disks[0].get_boot_sector_offset());
+							disks.back().get_boot_sector_offset());
 				}
 				if (disks.empty() || (first_err_code != 0 && disks.size() == 1)) {
 					err_code = E_UNKNOWN_FORMAT;
