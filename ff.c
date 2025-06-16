@@ -3384,6 +3384,8 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 	if (FF_MULTI_PARTITION && part > 4) return 3;	/* MBR has 4 partitions max */
 	for (i = 0; i < 4; i++) {		/* Load partition offset in the MBR */
 		mbr_pt[i] = ld_dword(fs->win + MBR_Table + i * SZ_PTE + PTE_StLba);
+		if(i>0) 
+			mbr_pt[i] += mbr_pt[i - 1];	/* Convert to absolute LBA */
 	}
 	i = part ? part - 1 : 0;		/* Table index to find first */
 	do {							/* Find an FAT volume */
