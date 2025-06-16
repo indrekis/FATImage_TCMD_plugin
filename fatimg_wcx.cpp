@@ -402,6 +402,7 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 		get_sectors_per_FAT() * static_cast<size_t>(bootsec.BPB_NumFATs)); //-V104
 	dataarea_off_m = get_root_area_offset() + get_root_dir_entry_count() * sizeof(FATxx_dir_entry_t);
 
+	plugin_config.log_print("Info# -- Processing bootsector -- ");
 	plugin_config.log_print("Info# Bytes per sector: %d", bootsec.BPB_bytesPerSec);
 	plugin_config.log_print("Info# Sectors per cluster: %d", static_cast<int>(bootsec.BPB_SecPerClus));
 	plugin_config.log_print("Info# Reserved sectors: %d", bootsec.BPB_RsvdSecCnt);
@@ -412,10 +413,11 @@ int FAT_image_t::process_bootsector(bool read_bootsec) {
 	plugin_config.log_print("Info# Sectors per FAT: %d", bootsec.BPB_SectorsPerFAT);
 	plugin_config.log_print("Info# Sectors per track: %d", bootsec.BPB_SecPerTrk);
 	plugin_config.log_print("Info# Heads: %d", bootsec.BPB_NumHeads);
-	plugin_config.log_print("\nInfo# Bytes in cluster: %d", cluster_size_m);
+	plugin_config.log_print("Info# Bytes in cluster: %d", cluster_size_m);
 	plugin_config.log_print("Info# FAT1 area offset: 0x%010X", FAT1area_off_m);
 	plugin_config.log_print("Info# Root area offset: 0x%010X", rootarea_off_m);
 	plugin_config.log_print("Info# Data area offset: 0x%010X", dataarea_off_m);
+	plugin_config.log_print("Info# --------- ");
 
 	FAT_type = detect_FAT_type();
 
