@@ -1616,9 +1616,12 @@ extern "C" {
 
 	// GetBackgroundFlags is called to determine whether a plugin supports background packing or unpacking.
 	// BACKGROUND_UNPACK == 1 Calls to OpenArchive, ReadHeader(Ex), ProcessFile and CloseArchive are thread-safe 
+	// BACKGROUND_PACK == 2 Calls to PackFiles are thread-safe 
+	// BACKGROUND_MEMPACK == 4 Calls to StartMemPack, PackToMem and DoneMemPack are thread-safe
+
 #ifdef _WIN64
 	DLLEXPORT int STDCALL GetBackgroundFlags(PackDefaultParamStruct* dps) {
-		return BACKGROUND_PACK | BACKGROUND_UNPACK | BACKGROUND_MEMPACK;
+		return BACKGROUND_UNPACK; // | BACKGROUND_PACK; // Mempack is not supported 
 	}
 #endif 
 	DLLEXPORT int STDCALL CanYouHandleThisFile(char* FileName) { // BOOL == int 
@@ -1727,6 +1730,12 @@ extern "C" {
 	{0, 4}, // partition 4 on drive 0
 	{1, 0}
 	};
+
+	
+	// Flags: 
+	// PK_PACK_MOVE_FILES         1 Delete original after packing
+    // PK_PACK_SAVE_PATHS         2 Save path names of files
+	// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
 
 	//// write-mode functions
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
