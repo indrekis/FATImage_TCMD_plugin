@@ -3351,7 +3351,7 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 )
 {
 	UINT fmt, i;
-	DWORD mbr_pt[4];
+	DWORD mbr_pt[4*4];
 
 
 	fmt = check_fs(fs, 0);				/* Load sector 0 and check if it is an FAT VBR as SFD format */
@@ -3382,10 +3382,28 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 	}
 #endif
 	if (FF_MULTI_PARTITION && part > 4) return 3;	/* MBR has 4 partitions max */
+	UINT j = 0;
 	for (i = 0; i < 4; i++) {		/* Load partition offset in the MBR */
-		mbr_pt[i] = ld_dword(fs->win + MBR_Table + i * SZ_PTE + PTE_StLba);
-		if(i>0) 
-			mbr_pt[i] += mbr_pt[i - 1];	/* Convert to absolute LBA */
+		mbr_pt[i + j] = ld_dword(fs->win + MBR_Table + i * SZ_PTE + PTE_StLba);
+		BYTE part_type = fs->win[MBR_Table + i * SZ_PTE + PTE_System];	/* Partition type */
+//		if(i>0) 
+//			mbr_pt[i] += mbr_pt[i - 1];	/* Convert to absolute LBA */ // PTE_System 
+		// QnD temporary fix 
+		if (part_type == 0x05 || part_type == 0x0F) { // Extended partition: 0x05 (CHS addressing) or 0x0F (LBA addressing)
+			LBA_t prev = fs->winsect;
+			LBA_t cur_EBR = mbr_pt[i];
+			j = 0; //!!! FIX -- only one extended partition now
+			if (move_window(fs, cur_EBR) != FR_OK) return 4;
+			mbr_pt[i + j] += ld_dword(fs->win + MBR_Table + 0 * SZ_PTE + PTE_StLba);
+			while (fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x05 || fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x0F) { // Extended partition cont.
+				cur_EBR += ld_dword(fs->win + MBR_Table + 1 * SZ_PTE + PTE_StLba);
+				if ( i+j >= 4*4) return 3; // Too many extended partitions
+				j++;
+				if (move_window(fs, cur_EBR ) != FR_OK) return 4;
+				mbr_pt[i + j] = ld_dword(fs->win + MBR_Table + 0 * SZ_PTE + PTE_StLba) + cur_EBR; // Convert to absolute LBA
+			}
+			move_window(fs, prev);
+		}
 	}
 	i = part ? part - 1 : 0;		/* Table index to find first */
 	do {							/* Find an FAT volume */
