@@ -1816,17 +1816,17 @@ extern "C" {
 
 				std::string targetPath;
 				if (SubPath && std::strlen(SubPath) > 0) {
-					targetPath = std::string(SubPath) + "/" + current;
+					targetPath = std::string(SubPath) + "\\" + current;
 
 					if (arch.disks.size() >= 2) {
 						if (targetPath.size() >= 2 && targetPath[1] == '\\') {
 							targetPath = targetPath.substr(2);
 						}
 					}
-					targetPath = lv_drv_num + "/" + targetPath;
+					targetPath = lv_drv_num + "\\" + targetPath;
 				}
 				else {
-					targetPath = lv_drv_num + "/" + std::string(current);
+					targetPath = lv_drv_num + "\\" + std::string(current);
 				}
 
 				DWORD fileAttributes = GetFileAttributes(srcFullPath.c_str());
@@ -2020,7 +2020,7 @@ extern "C" {
 				}
 			}
 
-			deletePath = lv_drv_num + "/" + deletePath;
+			deletePath = lv_drv_num + "\\" + deletePath;
 
 			FILINFO info;
 			fr = f_stat(deletePath.c_str(), &info);
