@@ -1729,27 +1729,11 @@ extern "C" {
 	//// write-mode functions
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
 
-		//DEBUG PRINT, DON'T FORGET TO DELETE
-		{
-			std::string log_path = "D:\\log_file.txt";
-
-
-			std::FILE* cf = std::fopen(log_path.data(), "a");
-
-			//std::ofstream cf{ config_file_path.data() };
-			if (!cf) {
-				return false;
-			}
-			fprintf(cf, "[FAT_disk_img_plugin]\n");
-			fprintf(cf, "[PackFiles] Called with:\n");
-			fprintf(cf, "  PackedFile : %s\n", PackedFile ? PackedFile : "NULL");
-			fprintf(cf, "  SubPath    : %s\n", SubPath ? SubPath : "NULL");
-			fprintf(cf, "  SrcPath    : %s\n", SrcPath ? SrcPath : "NULL");
-			fprintf(cf, "  AddList    : %s\n", AddList ? AddList : "NULL");
-			fprintf(cf, "  Flags      : %d\n", Flags);
-			fprintf(cf, "Returning : 0\n");
-			std::fclose(cf);
-		}
+		//! TODO: prints only the first file in AddList, not all of them.
+		plugin_config.log_print_dbg("Info# PackFiles() Called with: PackedFile=\'%s\'; "
+			"SubPath=\'%s\'; SrcPath=\'%s\'; AddList=\'%s\'; Flags =0x%02X",
+			PackedFile ? PackedFile : "NULL", SubPath ? SubPath : "NULL", SrcPath ? SrcPath : "NULL", AddList ? AddList : "NULL", Flags
+								   ); 
 
 		FATFS fs;
 		FRESULT fr;
@@ -1905,22 +1889,10 @@ extern "C" {
 		
 	DLLEXPORT int STDCALL DeleteFiles(char *PackedFile, char *DeleteList) {
 
-		//DEBUG PRINT, DON'T FORGET TO DELETE
-		std::string log_path = "D:\\log_file.txt";
-
-
-		std::FILE* cf = std::fopen(log_path.data(), "a");
-
-		//std::ofstream cf{ config_file_path.data() };
-		if (!cf) {
-			return false;
-		}
-		fprintf(cf, "[FAT_disk_img_plugin]\n");
-		fprintf(cf, "[DeleteFiles] Called with:\n");
-		fprintf(cf, "  PackedFile : %s\n", PackedFile ? PackedFile : "NULL");
-		fprintf(cf, "  DeleteList : %s\n", DeleteList ? DeleteList : "NULL");
-		fprintf(cf, "Returning : 0\n");
-		std::fclose(cf);
+		//! TODO: prints only the first file in DeleteList, not all of them.
+		plugin_config.log_print_dbg("Info# DeleteFiles() Called with: PackedFile=\'%s\'; DeleteList=\'%s\'",
+			PackedFile ? PackedFile : "NULL", DeleteList ? DeleteList : "NULL"
+		);
 
 		int logical_drive_number = 4;
 
@@ -1955,15 +1927,13 @@ extern "C" {
 				   logical_drive_number = drive_letter - 'C';
 			    }
 			    else {
-				  fprintf(cf, "Invalid drive prefix in DeleteList: %c\n", DeleteList[0]);
-				  std::fclose(cf);
-				  return E_ECLOSE;
-			     }
+					plugin_config.log_print_dbg("Warning# Invalid drive prefix in DeleteList: %c\n", DeleteList[0]);
+					return E_ECLOSE;
+			    }
 			}
 			else {
 				// to not delete a disk
-				fprintf(cf, "DeleteList does not specify a valid drive or path\n");
-				std::fclose(cf);
+				plugin_config.log_print_dbg("Warning# DeleteList does not specify a valid drive or path -- cannot delete partition\n");
 				return E_ECLOSE;
 			}
 		}
@@ -2013,7 +1983,8 @@ extern "C" {
 
 		while (*current != '\0') {
 			std::string deletePath = current;
-			fprintf(cf, "  DeleteList entry: %s\n", deletePath.c_str());
+
+			plugin_config.log_print_dbg("Info# DeleteList entry: \'%s\'", deletePath.c_str());
 
 			if (arch.disks.size() >= 2) {
 
@@ -2043,8 +2014,7 @@ extern "C" {
 			FILINFO info;
 			fr = f_stat(deletePath.c_str(), &info);
 			if (fr != FR_OK) {
-				fprintf(cf, "f_stat failed on %s\n", DeleteList);
-				std::fclose(cf);
+				plugin_config.log_print_dbg("Warning# f_stat failed on: \'%s\'", DeleteList);
 				return E_ECLOSE;
 			}
 
@@ -2059,19 +2029,18 @@ extern "C" {
 
 			if (fr != FR_OK) {
 				// Log failure and return an error code
-				fprintf(cf, "Failed to delete: %s\n", deletePath.c_str());
+				plugin_config.log_print_dbg("Warning# Failed to delete: \'%s\'", deletePath.c_str());
 				anyFailed = true;
 			}
 			else {
 				// Log success for each deleted file
-				fprintf(cf, "Successfully deleted file: %s\n", deletePath.c_str());
+				plugin_config.log_print_dbg("Info# Successfully deleted file: %s\n", deletePath.c_str());
 			}
 			current += strlen(current) + 1; // move onto next file
 		}
 
 		f_mount(nullptr, lv_drv_num.c_str(), 0);
-		fprintf(cf, "Returning : %d\n", anyFailed ? E_ECLOSE : 0);
-		std::fclose(cf);
+		// fprintf(cf, "Returning : %d\n", anyFailed ? E_ECLOSE : 0);
 
 		return anyFailed ? E_ECLOSE : 0;
 
