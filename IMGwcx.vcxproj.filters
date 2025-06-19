@@ -30,7 +30,7 @@
     <ClCompile Include="plugin_config.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="diskio.c">
+    <ClCompile Include="diskio.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ff.c">
@@ -69,6 +69,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ffconf.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

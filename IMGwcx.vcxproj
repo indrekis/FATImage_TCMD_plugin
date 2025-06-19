@@ -673,7 +673,7 @@
     <ClCompile Include="plugin_config.cpp" />
     <ClCompile Include="string_tools.cpp" />
     <ClCompile Include="sysio_winapi.cpp" />
-	<ClCompile Include="diskio.c" />
+    <ClCompile Include="diskio.cpp" />
     <ClCompile Include="ff.c" />
     <ClCompile Include="ffsystem.c" />
     <ClCompile Include="ffunicode.c" />
@@ -689,7 +689,6 @@
     <ClInclude Include="diskio.h" />
     <ClInclude Include="ff.h" />
     <ClInclude Include="ffconf.h" />
-
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.md" />
