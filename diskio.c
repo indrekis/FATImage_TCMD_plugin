@@ -17,10 +17,13 @@
 #define DEV_MMC		1	/* Example: Map MMC/SD card to physical drive 1 */
 #define DEV_USB		2	/* Example: Map USB MSD to physical drive 2 */
 
+// TODO: Fix to be reentrant and thread-safe
+FILE* fp = NULL;
 
 /*-----------------------------------------------------------------------*/
 /* Get Drive Status                                                      */
 /*-----------------------------------------------------------------------*/
+
 
 DSTATUS disk_status (
 	BYTE pdrv		/* Physical drive nmuber to identify the drive */
@@ -72,6 +75,11 @@ DSTATUS disk_initialize (
 {
 	DSTATUS stat = RES_OK;
 	int result;
+    fp = fopen(drives, "rb+");
+    if (!fp) {
+        perror("fopen failed");
+        return STA_NOINIT;
+	}
 
     //printf("calling disk_initialize successful\n");
 
@@ -123,16 +131,16 @@ DRESULT disk_read (
     //printf("  sector = %llu\n", (unsigned long long)sector);
     //printf("  count  = %u\n", count);
 
-    FILE* fp = fopen(drives, "rb");
-    int tt = errno; 
+    // fp = fopen(drives, "rb");
+    // int tt = errno; 
     if (fp == NULL) {
         printf("Error: Failed to open file %s\n", drives);
         return RES_ERROR;
     }
     fseek(fp, sector * FF_MIN_SS, SEEK_SET);
     fread(buff, FF_MIN_SS, count, fp);
-    fclose(fp);
-
+    //fclose(fp);
+    
     result = RES_OK;
     return result;
 //	switch (pdrv) {
@@ -190,7 +198,7 @@ DRESULT disk_write (
     //printf("  sector = %llu\n", (unsigned long long)sector);
     //printf("  count  = %u\n", count);
 
-    FILE* fp = fopen(drives, "rb+");
+    // FILE* fp = fopen(drives, "rb+");
     if (!fp) {
         perror("fopen failed");
         return RES_PARERR;
@@ -198,18 +206,18 @@ DRESULT disk_write (
 
     if (fseek(fp, sector * FF_MIN_SS, SEEK_SET) != 0) {
         perror("fseek failed");
-        fclose(fp);
+        //fclose(fp);
         return RES_ERROR;
     }
 
     size_t written = fwrite(buff, FF_MIN_SS, count, fp);
     if (written != count) {
         fprintf(stderr, "fwrite error: expected %u sectors, wrote %zu\n", count, written);
-        fclose(fp);
+        //fclose(fp);
         return RES_ERROR;
     }
 
-    fclose(fp);
+    //fclose(fp);
 
     result = RES_OK;
     return result;

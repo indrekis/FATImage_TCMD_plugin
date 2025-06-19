@@ -1665,7 +1665,7 @@ extern "C" {
 			for (const auto& entry : std::filesystem::directory_iterator(hostPath)) {
 				name = entry.path().filename().string();
 				srcFullPath = entry.path().string();
-				dstFullPath = fatPath + "/" + name;
+				dstFullPath = fatPath + "\\" + name;
 
 				if (entry.is_directory()) {
 					int res = PackDirectory(srcFullPath, dstFullPath);
@@ -1675,6 +1675,54 @@ extern "C" {
 					}
 				}
 				else {
+					auto srcFile = open_file_shared_read(srcFullPath.c_str());
+					// FILE* srcFile = std::fopen(srcFullPath.data(), "rb");
+					if (!srcFile) {
+						// Cannot open source file
+						// f_mount(nullptr, lv_drv_num.c_str(), 0); // TODO: check if needed and fix
+						// fclose(fp);
+						return E_EOPEN;
+					}
+					auto srcFileSize = get_file_size(srcFile);
+
+					FIL dstFile;
+					fr = f_open(&dstFile, dstFullPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
+					if (fr != FR_OK) {
+						close_file(srcFile);
+						// f_mount(nullptr, lv_drv_num.c_str(), 0);
+						// fclose(fp);
+						return E_BAD_ARCHIVE;
+					}
+
+					char* buffer = new char[srcFileSize];
+					if (!buffer) {
+						close_file(srcFile);
+						f_close(&dstFile);
+						// f_mount(nullptr, lv_drv_num.c_str(), 0);
+						// fclose(fp);
+						return E_NO_MEMORY;
+					}
+
+					auto read_bytes = read_file(srcFile, buffer, srcFileSize); // Read the whole file into memory
+					// TODO: check read_bytes == srcFileSize
+
+					UINT bytesWritten = 0;
+					fr = f_write(&dstFile, buffer, read_bytes, &bytesWritten);
+					if (fr != FR_OK || bytesWritten != read_bytes) {
+						// Write error occurred
+						f_unlink(dstFullPath.c_str());
+						delete[] buffer;
+						close_file(srcFile);
+						f_close(&dstFile);
+						// f_mount(nullptr, lv_drv_num.c_str(), 0);
+						// fclose(fp);
+						return E_EWRITE;
+					}
+
+					delete[] buffer;
+					close_file(srcFile);
+					f_close(&dstFile);
+#if 0
 					srcFile = fopen(srcFullPath.c_str(), "rb");
 					if (!srcFile) {
 						overallResult = E_EOPEN;
@@ -1706,6 +1754,7 @@ extern "C" {
 						f_unlink(dstFullPath.c_str());
 						continue;
 					}
+#endif 
 				}
 			}
 		}
@@ -1736,6 +1785,8 @@ extern "C" {
 	// PK_PACK_MOVE_FILES         1 Delete original after packing
     // PK_PACK_SAVE_PATHS         2 Save path names of files
 	// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
+
+	extern FILE* fp;
 
 	//// write-mode functions
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
@@ -1841,33 +1892,61 @@ extern "C" {
 					if (res != 0) {
 						// Directory packing failed
 						f_mount(nullptr, lv_drv_num.c_str(), 0);
+						fclose(fp);
 						return res;
 					}
 					continue;
 				}
 
-				FILE* srcFile = std::fopen(srcFullPath.data(), "rb");
+				auto srcFile = open_file_shared_read(srcFullPath.c_str());
+				// FILE* srcFile = std::fopen(srcFullPath.data(), "rb");
 				if (!srcFile) {
 					// Cannot open source file
 					f_mount(nullptr, lv_drv_num.c_str(), 0);
+					fclose(fp);
 					return E_EOPEN;
 				}
+				auto srcFileSize = get_file_size(srcFile);
 
 				FIL dstFile;
 				fr = f_open(&dstFile, targetPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
 				if (fr != FR_OK) {
-					fclose(srcFile);
+					close_file(srcFile);
 					f_mount(nullptr, lv_drv_num.c_str(), 0);
+					fclose(fp);
 					return E_BAD_ARCHIVE;
 				}
 
 
 
-				char buffer[4096];
-				size_t bytesRead;
-				UINT bytesWritten;
+				char* buffer = new char[srcFileSize];
+				if(!buffer) {
+					close_file(srcFile);
+					f_close(&dstFile);
+					f_mount(nullptr, lv_drv_num.c_str(), 0);
+					fclose(fp);
+					return E_NO_MEMORY;
+				}
+
+				auto read_bytes = read_file(srcFile, buffer, srcFileSize); // Read the whole file into memory
+				// TODO: check read_bytes == srcFileSize
+
+				UINT bytesWritten = 0;
+				fr = f_write(&dstFile, buffer, read_bytes, &bytesWritten);
+				if (fr != FR_OK || bytesWritten != read_bytes) {
+					// Write error occurred
+					delete[] buffer;
+					close_file(srcFile);
+					f_close(&dstFile);
+					f_mount(nullptr, lv_drv_num.c_str(), 0);
+					fclose(fp);
+					return E_EWRITE;
+				}
 				bool errorOccurred = false;
 
+				/*
+				size_t bytesRead;
+				UINT bytesWritten;
 				while ((bytesRead = fread(buffer, 1, sizeof(buffer), srcFile)) > 0) {
 					fr = f_write(&dstFile, buffer, bytesRead, &bytesWritten);
 					if (fr != FR_OK || bytesWritten != bytesRead) {
@@ -1876,24 +1955,31 @@ extern "C" {
 						break;
 					}
 				}
+				*/ 
 
-				fclose(srcFile);
+				delete[] buffer;
+				close_file(srcFile);
 				f_close(&dstFile);
 
+				/*
 				if (errorOccurred) {
 					f_unlink(targetPath.c_str());
 					f_mount(nullptr, lv_drv_num.c_str(), 0);
+					fclose(fp);
 					return E_EWRITE;
 				}
+				*/
 			}
 		}
 		catch (...) {
 			// Unmount filesystem in case of any unexpected errors
 			f_mount(nullptr, lv_drv_num.c_str(), 0);
+			fclose(fp);
 			return E_UNKNOWN_FORMAT;
 		}
 
 		f_mount(nullptr, lv_drv_num.c_str(), 0);
+		fclose(fp);
 
 		return 0;
 	}
@@ -1968,7 +2054,7 @@ extern "C" {
 
 				if (strcmp(fno.fname, ".") == 0 || strcmp(fno.fname, "..") == 0) continue;
 
-				std::string fullPath = std::string(path) + "/" + fno.fname;
+				std::string fullPath = std::string(path) + "\\" + fno.fname;
 				if (fno.fattrib & AM_DIR) {
 					// Recurse into subdirectory
 					res = recursive_del_ref(fullPath.c_str(), recursive_del_ref);
@@ -2051,6 +2137,7 @@ extern "C" {
 		}
 
 		f_mount(nullptr, lv_drv_num.c_str(), 0);
+		fclose(fp);
 		// fprintf(cf, "Returning : %d\n", anyFailed ? E_ECLOSE : 0);
 
 		return anyFailed ? E_ECLOSE : 0;
