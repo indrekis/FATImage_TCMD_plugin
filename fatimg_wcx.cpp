@@ -1656,7 +1656,7 @@ extern "C" {
 
 	int copy_from_host_to_image(const char* src_path, const char* target_path) {
 		auto srcFile = open_file_shared_read(src_path);
-		if (!srcFile) {
+		if (srcFile == file_open_error_v) {
 			// Cannot open source file
 			return E_EOPEN;
 		}
@@ -1717,7 +1717,7 @@ extern "C" {
 	}
 	
 
-	int PackDirectory(const char* hostPath, const char* fatPath) {
+	int PackDirectory(const char* hostPath, const char* fatPath, bool delete_file_after) {
 		int overallResult = 0;
 
 		FRESULT fr = f_mkdir(fatPath);
@@ -1746,16 +1746,26 @@ extern "C" {
 			dstFullPath += entry->d_name;
 			
 			if (is_dir(srcFullPath.data())) {
-				int res = PackDirectory(srcFullPath.data(), dstFullPath.data());
+				int res = PackDirectory(srcFullPath.data(), dstFullPath.data(), delete_file_after);
 				if (res != 0) {
 					overallResult = res;
 					continue;
+				} 
+				if (delete_file_after) {
+					auto res2 = delete_dir(srcFullPath.data());
+					if (!res2)
+						return E_NOT_SUPPORTED; // Which error would be best here?
 				}
 			} else 
 			{
 				auto res = copy_from_host_to_image(srcFullPath.data(), dstFullPath.data());
 				if (res != 0)
 					return res;
+				if (delete_file_after) {
+					auto res2 = delete_file(srcFullPath.data());
+					if (!res2)
+						return E_NOT_SUPPORTED; // Which error would be best here?
+				}
 			}
 		}
 		closedir(dir);
@@ -1911,10 +1921,15 @@ extern "C" {
 			if ( is_dir(srcFullPath.data()) ) {  // If it's a dir
 				// Create a dir in FAT img
 
-				int res = PackDirectory(srcFullPath.data(), targetPath.data());
+				int res = PackDirectory(srcFullPath.data(), targetPath.data(), Flags & PK_PACK_MOVE_FILES );
 				if (res != 0) {
 					// Directory packing failed
 					return res;
+				}
+				if (Flags & PK_PACK_MOVE_FILES) {
+					auto res2 = delete_dir(srcFullPath.data());
+					if (!res2)
+						return E_NOT_SUPPORTED; // Which error would be best here?
 				}
 				continue;
 			}
@@ -1922,6 +1937,11 @@ extern "C" {
 			auto res = copy_from_host_to_image(srcFullPath.data(), targetPath.data());
 			if (res != 0)
 				return res;
+			if (Flags & PK_PACK_MOVE_FILES) {
+				auto res2 = delete_file(srcFullPath.data());
+				if (!res2)
+					return E_NOT_SUPPORTED; // Which error would be best here?
+			}
 		}
 
 

@@ -14,6 +14,7 @@
 */
 #include "sysio_winapi.h"
 
+// INVALID_HANDLE_VALUE on error
 file_handle_t open_file_shared_read(const char* filename) {
 	file_handle_t handle;
 	handle = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
@@ -55,6 +56,11 @@ bool flush_file(file_handle_t handle) {
 
 bool delete_file(const char* filename) {
 	return DeleteFile(filename);
+}
+
+bool delete_dir(const char* filename)
+{
+	return RemoveDirectory(filename);
 }
 
 bool get_temp_filename(char* buff, const char prefix[]) {
