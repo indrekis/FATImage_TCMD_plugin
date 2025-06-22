@@ -738,7 +738,7 @@ FAT_image_t::FAT_types FAT_image_t::detect_FAT_type() const {
 		return FAT_image_t::FAT12_type;
 	}
 
-	//! TODO: Possible small FAT32 discs without BS_FilSysType could be misdetected.
+	//! TODO: Possible small FAT32 disks without BS_FilSysType could be misdetected.
 	if (clusters >= max_cluster_FAT(FAT12_type)+1 &&
 		clusters <= max_cluster_FAT(FAT16_type)) { // 0x00000FF7 - 0x0000FFF6: 4087–65526
 		if (clusters > max_normal_cluster_FAT(FAT16_type)) {
@@ -791,7 +791,7 @@ int FAT_image_t::extract_to_file(file_handle_t hUnpFile, uint32_t idx) {
 			if (remaining > get_cluster_size()) { remaining -= get_cluster_size(); } //-V104 //-V101
 			else { remaining = 0; }
 
-			nextclus = next_cluster_FAT(nextclus); // TODO: fix if too large cluster number
+			nextclus = next_cluster_FAT(nextclus); // TODO: fix if too large cluster number -- test if fixed
 		}
 		return 0;
 	}
@@ -1617,7 +1617,7 @@ extern "C" {
 		return is_OK;
 	}
 
-	//! TODO: Remove new (or implement creation later?) (TO implement, use pre-created empty images?)
+	//! TODO: Remove new (or implement creation later?) (TO implement, use pre-created empty FDD images?)
 	DLLEXPORT int STDCALL GetPackerCaps() {
 		return PK_CAPS_NEW | PK_CAPS_MODIFY | PK_CAPS_DELETE | PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_MULTIPLE;
 	}
@@ -1885,7 +1885,6 @@ extern "C" {
 		return 0;
 	}
 	
-	// TODO: Remove read-only files
 	DLLEXPORT int STDCALL DeleteFiles(char *PackedFile, char *DeleteList) {
 		assert(DeleteList);
 		//! TODO: fix: prints only the first file in DeleteList, not all of them.
