@@ -3462,7 +3462,7 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 	/* Following code attempts to mount the volume. (find an FAT volume, analyze the BPB and initialize the filesystem object) */
 
 	fs->fs_type = 0;					/* Invalidate the filesystem object */
-	stat = disk_initialize(fs->pdrv);	/* Initialize the volume hosting physical drive */
+	stat = disk_initialize(fs->pdrv, fs->image_path);	/* Initialize the volume hosting physical drive */
 	if (stat & STA_NOINIT) { 			/* Check if the initialization succeeded */
 		return FR_NOT_READY;			/* Failed to initialize due to no medium or hard error */
 	}

@@ -1382,23 +1382,6 @@ extern "C" {
 	// OpenArchive should perform all necessary operations when an archive is to be opened
 	DLLEXPORT archive_HANDLE STDCALL OpenArchive(tOpenArchiveData* ArchiveData)
 	{
-		//DEBUG PRINT, DON'T FORGET TO DELETE
-		{
-			std::string log_path = "D:\\log_file.txt";
-
-
-			std::FILE* cf = std::fopen(log_path.data(), "a");
-			std::filesystem::path some_path = ArchiveData->ArcName;
-			std::string path_str = some_path.generic_string();
-			const char* try_path = path_str.c_str();
-			//std::ofstream cf{ config_file_path.data() };
-			fprintf(cf, "[FAT_disk_img_plugin]\n");
-			fprintf(cf, "[Open Archive] Called\n");
-			fprintf(cf, "Version 1.1\n");
-			fprintf(cf, "Archive Name: %s\n", try_path);
-			std::fclose(cf);
-		}
-
 		plugin_config.log_print("\n\nInfo# Opening file: %s", ArchiveData->ArcName);
 
 		auto rdconf = plugin_config.read_conf(nullptr, true); // Reread confuguration
@@ -1460,11 +1443,6 @@ extern "C" {
 		plugin_config.log_print("Info# Loaded FATs %d, of them -- catalogs: %zd", loaded_FATs, loaded_catalogs);
 
 		if (loaded_catalogs > 0 || err_code == 0) { // Second condition -- disk has unknown partitions only
-			//assume that the volume may be mounted with FATFs for now
-			std::filesystem::path path = ArchiveData->ArcName;
-			std::string temp_str = path.generic_string();
-			strncpy(drives, temp_str.c_str(), MAX_PATH); //adds the file-folder path to the drives list - shared between dikio.c and fatimg_wcx.cpp
-
 			ArchiveData->OpenResult = 0; // OK
 			return arch.release(); // Returns raw ptr and releases ownership 
 		}
@@ -1650,11 +1628,8 @@ extern "C" {
 		std::string name;
 		std::string srcFullPath;
 		std::string dstFullPath;
-		FIL dstFile;
 		FILE* srcFile = nullptr;
 		FRESULT fr;
-		UINT bytesWritten;
-		char buffer[4096];
 		int overallResult = 0;
 
 
@@ -1688,7 +1663,7 @@ extern "C" {
 					FIL dstFile;
 					fr = f_open(&dstFile, dstFullPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
 					if (fr != FR_OK) {
-						close_file(srcFile);
+						close_file(srcFile); // TODO: Test! 
 						// f_mount(nullptr, lv_drv_num.c_str(), 0);
 						// fclose(fp);
 						return E_BAD_ARCHIVE;
@@ -1707,7 +1682,7 @@ extern "C" {
 					// TODO: check read_bytes == srcFileSize
 
 					UINT bytesWritten = 0;
-					fr = f_write(&dstFile, buffer, read_bytes, &bytesWritten);
+					fr = f_write(&dstFile, buffer, static_cast<UINT>(read_bytes), &bytesWritten);
 					if (fr != FR_OK || bytesWritten != read_bytes) {
 						// Write error occurred
 						f_unlink(dstFullPath.c_str());
@@ -1722,39 +1697,6 @@ extern "C" {
 					delete[] buffer;
 					close_file(srcFile);
 					f_close(&dstFile);
-#if 0
-					srcFile = fopen(srcFullPath.c_str(), "rb");
-					if (!srcFile) {
-						overallResult = E_EOPEN;
-						continue;
-					}
-
-					fr = f_open(&dstFile, dstFullPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
-					if (fr != FR_OK) {
-						fclose(srcFile);
-						overallResult = E_ECREATE;
-						continue;
-					}
-
-					size_t bytesRead;
-					bool errorOccurred = false;
-					while ((bytesRead = fread(buffer, 1, sizeof(buffer), srcFile)) > 0) {
-						fr = f_write(&dstFile, buffer, bytesRead, &bytesWritten);
-						if (fr != FR_OK || bytesWritten != bytesRead) {
-							errorOccurred = true;
-							overallResult = E_EWRITE;
-							break;
-						}
-					}
-
-					fclose(srcFile);
-					f_close(&dstFile);
-					if (errorOccurred) {
-						// Remove partially written file
-						f_unlink(dstFullPath.c_str());
-						continue;
-					}
-#endif 
 				}
 			}
 		}
@@ -1770,7 +1712,6 @@ extern "C" {
 		return overallResult;
 	}
 
-	char drives[MAX_PATH]; //open file pathes
 
 	PARTITION VolToPart[] = {
 	{0, 1}, // partition 1 on drive 0
@@ -1781,12 +1722,33 @@ extern "C" {
 	};
 
 	
+	// RAII type to close FatFS disk and close image file
+	class FatFS_mounter_t {
+		FATFS fs;
+		char disk_number[3];
+		FRESULT fs_result;
+	public:
+		FatFS_mounter_t(const char* disk_number_in, const char* archive_name) {
+			strncpy(fs.image_path, archive_name, MAX_PATH);
+			strncpy(disk_number, disk_number_in, sizeof(disk_number));
+			fs_result = f_mount(&fs, disk_number, 1);
+		}
+
+		FRESULT get_error() const { return fs_result; }
+		
+		// Unmount and stop image
+		~FatFS_mounter_t() {
+			// Abstractions are mixed here, but it is dictated by the FatFS design...
+			f_mount(nullptr, disk_number, 0);
+
+			disk_deinitialize(fs.image_path);
+		}
+	};
+
 	// Flags: 
 	// PK_PACK_MOVE_FILES         1 Delete original after packing
     // PK_PACK_SAVE_PATHS         2 Save path names of files
 	// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
-
-	extern FILE* fp;
 
 	//// write-mode functions
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
@@ -1796,11 +1758,8 @@ extern "C" {
 			"SubPath=\'%s\'; SrcPath=\'%s\'; AddList=\'%s\'; Flags =0x%02X",
 			PackedFile ? PackedFile : "NULL", SubPath ? SubPath : "NULL", SrcPath ? SrcPath : "NULL", AddList ? AddList : "NULL", Flags
 								   ); 
-
-		FATFS fs;
-		FRESULT fr;
-		int logical_drive_number = 4;
-		char drive_letter;
+		assert(SrcPath);
+		int logical_drive_number = 4; //!
 
 		size_t image_file_size = get_file_size(PackedFile);
 		auto hArchFile = open_file_read_shared_write(PackedFile);
@@ -1821,6 +1780,7 @@ extern "C" {
 		//! TODO: -- див. опис в DeleteFiles біля такого ж рядка.
 		close_file(hArchFile);
 
+		char drive_letter;
 		if (arch.disks.size() >= 2) {
 			if (SubPath != NULL) {
 				drive_letter = toupper(SubPath[0]);
@@ -1849,14 +1809,12 @@ extern "C" {
 			}
 		}
 		std::string lv_drv_num = std::string(1, '0' + logical_drive_number) + ":";
-		fr = f_mount(&fs, lv_drv_num.c_str(), 1);
-		if (fr != FR_OK) return E_UNKNOWN_FORMAT;
+		FatFS_mounter_t fatfs_RAII{ lv_drv_num.c_str(), PackedFile };
+		if (fatfs_RAII.get_error() != FR_OK) 
+			return E_UNKNOWN_FORMAT;
 		try {
 
 			for (char* current = AddList; current && *current != '\0'; current += std::strlen(current) + 1) {
-
-
-
 				std::string srcFullPath = std::string(SrcPath) + current;
 
 				if( arch.disks.size() >= 2) {
@@ -1891,40 +1849,29 @@ extern "C" {
 					int res = PackDirectory(srcFullPath, targetPath);
 					if (res != 0) {
 						// Directory packing failed
-						f_mount(nullptr, lv_drv_num.c_str(), 0);
-						fclose(fp);
 						return res;
 					}
 					continue;
 				}
 
 				auto srcFile = open_file_shared_read(srcFullPath.c_str());
-				// FILE* srcFile = std::fopen(srcFullPath.data(), "rb");
 				if (!srcFile) {
 					// Cannot open source file
-					f_mount(nullptr, lv_drv_num.c_str(), 0);
-					fclose(fp);
 					return E_EOPEN;
 				}
 				auto srcFileSize = get_file_size(srcFile);
 
 				FIL dstFile;
-				fr = f_open(&dstFile, targetPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
+				FRESULT fr = f_open(&dstFile, targetPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
 				if (fr != FR_OK) {
 					close_file(srcFile);
-					f_mount(nullptr, lv_drv_num.c_str(), 0);
-					fclose(fp);
 					return E_BAD_ARCHIVE;
 				}
-
-
 
 				char* buffer = new char[srcFileSize];
 				if(!buffer) {
 					close_file(srcFile);
 					f_close(&dstFile);
-					f_mount(nullptr, lv_drv_num.c_str(), 0);
-					fclose(fp);
 					return E_NO_MEMORY;
 				}
 
@@ -1932,61 +1879,32 @@ extern "C" {
 				// TODO: check read_bytes == srcFileSize
 
 				UINT bytesWritten = 0;
-				fr = f_write(&dstFile, buffer, read_bytes, &bytesWritten);
+				fr = f_write(&dstFile, buffer, static_cast<UINT>(read_bytes), &bytesWritten);
 				if (fr != FR_OK || bytesWritten != read_bytes) {
 					// Write error occurred
 					delete[] buffer;
 					close_file(srcFile);
 					f_close(&dstFile);
-					f_mount(nullptr, lv_drv_num.c_str(), 0);
-					fclose(fp);
 					return E_EWRITE;
 				}
 				bool errorOccurred = false;
 
-				/*
-				size_t bytesRead;
-				UINT bytesWritten;
-				while ((bytesRead = fread(buffer, 1, sizeof(buffer), srcFile)) > 0) {
-					fr = f_write(&dstFile, buffer, bytesRead, &bytesWritten);
-					if (fr != FR_OK || bytesWritten != bytesRead) {
-						// Write error occurred
-						errorOccurred = true;
-						break;
-					}
-				}
-				*/ 
-
 				delete[] buffer;
 				close_file(srcFile);
 				f_close(&dstFile);
-
-				/*
-				if (errorOccurred) {
-					f_unlink(targetPath.c_str());
-					f_mount(nullptr, lv_drv_num.c_str(), 0);
-					fclose(fp);
-					return E_EWRITE;
-				}
-				*/
 			}
 		}
 		catch (...) {
 			// Unmount filesystem in case of any unexpected errors
-			f_mount(nullptr, lv_drv_num.c_str(), 0);
-			fclose(fp);
 			return E_UNKNOWN_FORMAT;
 		}
 
-		f_mount(nullptr, lv_drv_num.c_str(), 0);
-		fclose(fp);
-
 		return 0;
 	}
-		
+	
+	// TODO: Remove read-only files
 	DLLEXPORT int STDCALL DeleteFiles(char *PackedFile, char *DeleteList) {
-
-		//! TODO: prints only the first file in DeleteList, not all of them.
+		//! TODO: fix: prints only the first file in DeleteList, not all of them.
 		plugin_config.log_print_dbg("Info# DeleteFiles() Called with: PackedFile=\'%s\'; DeleteList=\'%s\'",
 			PackedFile ? PackedFile : "NULL", DeleteList ? DeleteList : "NULL"
 		);
@@ -2034,13 +1952,11 @@ extern "C" {
 				return E_ECLOSE;
 			}
 		}
-		FATFS fs;
 		std::string lv_drv_num = std::string(1, '0' + logical_drive_number) + ":";
 
-		FRESULT fr = f_mount(&fs, lv_drv_num.c_str(), 1);
-		if (fr != FR_OK) {
-			return E_NOT_SUPPORTED;
-		}
+		FatFS_mounter_t fatfs_RAII{ lv_drv_num.c_str(), PackedFile };
+		if (fatfs_RAII.get_error() != FR_OK)
+			return E_UNKNOWN_FORMAT;
 
 		auto recursive_del = [&](const char* path, auto&& recursive_del_ref) -> FRESULT {
 			DIR dir;
@@ -2109,7 +2025,7 @@ extern "C" {
 			deletePath = lv_drv_num + "\\" + deletePath;
 
 			FILINFO info;
-			fr = f_stat(deletePath.c_str(), &info);
+			FRESULT fr = f_stat(deletePath.c_str(), &info);
 			if (fr != FR_OK) {
 				plugin_config.log_print_dbg("Warning# f_stat failed on: \'%s\'", DeleteList);
 				return E_ECLOSE;
@@ -2135,10 +2051,6 @@ extern "C" {
 			}
 			current += strlen(current) + 1; // move onto next file
 		}
-
-		f_mount(nullptr, lv_drv_num.c_str(), 0);
-		fclose(fp);
-		// fprintf(cf, "Returning : %d\n", anyFailed ? E_ECLOSE : 0);
 
 		return anyFailed ? E_ECLOSE : 0;
 

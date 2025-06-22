@@ -172,6 +172,8 @@ typedef struct {
 #endif
 	LBA_t	winsect;		/* Current sector appearing in the win[] */
 	BYTE	win[FF_MAX_SS];	/* Disk access window for Directory, FAT (and file data at tiny cfg) */
+/*-------------------------------------*/
+	TCHAR	image_path[MAX_PATH]; /* Extension for working with the disk images */
 } FATFS;
 
 
