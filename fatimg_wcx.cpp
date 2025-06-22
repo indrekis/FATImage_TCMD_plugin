@@ -31,6 +31,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <dirent.h> 
+
 #include <fstream>
 #include <filesystem>
 
@@ -1947,7 +1949,7 @@ extern "C" {
 			return E_UNKNOWN_FORMAT;
 
 		auto recursive_del = [&](const char* path, auto&& recursive_del_ref) -> FRESULT {
-			DIR dir;
+			DIR_FATFS dir;
 			FILINFO fno;
 			FRESULT res = f_opendir(&dir, path);
 			if (res != FR_OK) return res;
