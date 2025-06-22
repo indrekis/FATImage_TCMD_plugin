@@ -34,7 +34,6 @@
 #include <dirent.h> 
 
 #include <fstream>
-#include <filesystem>
 
 
 // #define FLTK_ENABLED_EXPERIMENTAL  // Here for the quick tests -- should be defined by the build system
@@ -1577,6 +1576,7 @@ extern "C" {
 		hArcData->pLocChangeVol = pChangeVolProc;
 	}
 
+	// TODO: Implement notifications on progress
 	// This function allows you to notify user about the progress when you un/pack files
 	DLLEXPORT void STDCALL SetProcessDataProc(archive_HANDLE hArcData, tProcessDataProc pProcessDataProc)
 	{
@@ -1638,69 +1638,69 @@ extern "C" {
 		fr = f_mkdir(fatPath.c_str());
 		if (fr != FR_OK && fr != FR_EXIST) return E_ECREATE;
 
-		try {
-			for (const auto& entry : std::filesystem::directory_iterator(hostPath)) {
-				name = entry.path().filename().string();
-				srcFullPath = entry.path().string();
-				dstFullPath = fatPath + "\\" + name;
-
-				if (entry.is_directory()) {
-					int res = PackDirectory(srcFullPath, dstFullPath);
-					if (res != 0) {
-						overallResult = res;
-						continue;
-					}
+		
+		DIR* dir = opendir(hostPath.c_str());
+		if (dir == nullptr) {
+			auto lasterrno = errno; 
+			plugin_config.log_print_dbg("Warning# In PackDirectory with: hostPath=\'%s\'; "
+				"fatPath=\'%s\'; with errno = %d",
+				hostPath.c_str(), fatPath.c_str(), lasterrno
+			);
+			return E_EREAD;
+		}
+		for (dirent* entry = readdir(dir); entry != nullptr; entry = readdir(dir)) {
+			if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+				continue;
+			srcFullPath = hostPath + "\\" + entry->d_name;
+			dstFullPath = fatPath + "\\" + entry->d_name;
+			if (is_dir(srcFullPath.c_str())) {
+				int res = PackDirectory(srcFullPath, dstFullPath);
+				if (res != 0) {
+					overallResult = res;
+					continue;
 				}
-				else {
-					auto srcFile = open_file_shared_read(srcFullPath.c_str());
-					// FILE* srcFile = std::fopen(srcFullPath.data(), "rb");
-					if (!srcFile) {
-						// Cannot open source file
-						return E_EOPEN;
-					}
-					auto srcFileSize = get_file_size(srcFile);
+			} else 
+			{
+				auto srcFile = open_file_shared_read(srcFullPath.c_str());
+				// FILE* srcFile = std::fopen(srcFullPath.data(), "rb");
+				if (!srcFile) {
+					// Cannot open source file
+					return E_EOPEN;
+				}
+				auto srcFileSize = get_file_size(srcFile);
 
-					FIL dstFile;
-					fr = f_open(&dstFile, dstFullPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
-					if (fr != FR_OK) {
-						close_file(srcFile); // TODO: Test! 
-						return E_BAD_ARCHIVE;
-					}
+				FIL dstFile;
+				fr = f_open(&dstFile, dstFullPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
+				if (fr != FR_OK) {
+					close_file(srcFile); // TODO: Test! 
+					return E_BAD_ARCHIVE;
+				}
 
-					std::unique_ptr<char[]> buffer{ new(nothrow) char[srcFileSize] };
-					if (!buffer) {
-						close_file(srcFile);
-						f_close(&dstFile);
-						return E_NO_MEMORY;
-					}
-
-					auto read_bytes = read_file(srcFile, buffer.get(), srcFileSize); // Read the whole file into memory
-					// TODO: check read_bytes == srcFileSize
-
-					UINT bytesWritten = 0;
-					fr = f_write(&dstFile, buffer.get(), static_cast<UINT>(read_bytes), &bytesWritten);
-					if (fr != FR_OK || bytesWritten != read_bytes) {
-						// Write error occurred
-						// f_unlink(dstFullPath.c_str());
-						close_file(srcFile);
-						f_close(&dstFile);
-						return E_EWRITE;
-					}
-
+				std::unique_ptr<char[]> buffer{ new(nothrow) char[srcFileSize] };
+				if (!buffer) {
 					close_file(srcFile);
 					f_close(&dstFile);
+					return E_NO_MEMORY;
 				}
+
+				auto read_bytes = read_file(srcFile, buffer.get(), srcFileSize); // Read the whole file into memory
+				// TODO: check read_bytes == srcFileSize
+
+				UINT bytesWritten = 0;
+				fr = f_write(&dstFile, buffer.get(), static_cast<UINT>(read_bytes), &bytesWritten);
+				if (fr != FR_OK || bytesWritten != read_bytes) {
+					// Write error occurred
+					// f_unlink(dstFullPath.c_str());
+					close_file(srcFile);
+					f_close(&dstFile);
+					return E_EWRITE;
+				}
+
+				close_file(srcFile);
+				f_close(&dstFile);
 			}
 		}
-		catch (const std::filesystem::filesystem_error& e) {
-			// Handle filesystem-related errors
-
-			return E_BAD_ARCHIVE;
-		}
-		catch (...) {
-			// Catch any other unexpected errors
-			return E_UNKNOWN_FORMAT;
-		}
+		closedir(dir);
 		return overallResult;
 	}
 
