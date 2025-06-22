@@ -39,7 +39,7 @@ extern "C" {
 #if defined(_WIN32)		/* Windows VC++ (for development only) */
 #define FF_INTDEF 2
 #include <windows.h>
-typedef unsigned __int64 QWORD;
+typedef unsigned __int64 QWORD; //-V677
 #include <float.h>
 #define isnan(v) _isnan(v)
 #define isinf(v) (!_finite(v))
@@ -93,7 +93,7 @@ typedef WCHAR TCHAR;
 #define _T(x) L ## x
 #define _TEXT(x) L ## x
 #elif FF_USE_LFN && FF_LFN_UNICODE == 2	/* Unicode in UTF-8 encoding */
-typedef char TCHAR;
+typedef char TCHAR; //-V677
 #define _T(x) u8 ## x
 #define _TEXT(x) u8 ## x
 #elif FF_USE_LFN && FF_LFN_UNICODE == 3	/* Unicode in UTF-32 encoding */
