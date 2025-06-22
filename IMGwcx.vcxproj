@@ -175,17 +175,17 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <TargetExt>.wcx64</TargetExt>
-    <TargetName>img</TargetName>
+    <TargetName>fatimg</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_w_FLTK|x64'">
     <LinkIncremental>true</LinkIncremental>
     <TargetExt>.wcx64</TargetExt>
-    <TargetName>img</TargetName>
+    <TargetName>fatimg</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_fltk|x64'">
     <LinkIncremental>true</LinkIncremental>
     <TargetExt>.wcx64</TargetExt>
-    <TargetName>img</TargetName>
+    <TargetName>fatimg</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <OutDir>.\Release\</OutDir>
@@ -201,12 +201,12 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <TargetName>img</TargetName>
+    <TargetName>fatimg</TargetName>
     <TargetExt>.wcx64</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release_w_FLTK|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <TargetName>img</TargetName>
+    <TargetName>fatimg</TargetName>
     <TargetExt>.wcx64</TargetExt>
   </PropertyGroup>
   <PropertyGroup Label="Vcpkg">
