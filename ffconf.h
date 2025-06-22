@@ -166,8 +166,8 @@
 / Drive/Volume Configurations
 /---------------------------------------------------------------------------*/
 
-#define FF_VOLUMES		10
-/* Number of volumes (logical drives) to be used. (1-10) */
+#define FF_VOLUMES		24 /* 'C'-'Z', arbitrary limit */
+/* Number of volumes (logical drives) to be used.*/
 
 
 #define FF_STR_VOLUME_ID	0

@@ -460,7 +460,7 @@ typedef struct {	/* Open object identifier with status */
 /* File/Volume controls           */
 /*--------------------------------*/
 
-#if FF_VOLUMES < 1 || FF_VOLUMES > 10
+#if FF_VOLUMES < 1 || FF_VOLUMES > 32 /* Arbitrary limit */
 #error Wrong FF_VOLUMES setting
 #endif
 static FATFS *FatFs[FF_VOLUMES];	/* Pointer to the filesystem objects (logical drives) */
@@ -3351,7 +3351,7 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 )
 {
 	UINT fmt, i;
-	DWORD mbr_pt[4*4];
+	DWORD mbr_pt[FF_VOLUMES];
 
 
 	fmt = check_fs(fs, 0);				/* Load sector 0 and check if it is an FAT VBR as SFD format */
@@ -3381,7 +3381,7 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 		return 3;	/* Not found */
 	}
 #endif
-	if (FF_MULTI_PARTITION && part > 4) return 3;	/* MBR has 4 partitions max */
+	if (FF_MULTI_PARTITION && part > FF_VOLUMES) return 3;	/* MBR has 4 partitions max */
 	UINT j = 0;
 	for (i = 0; i < 4; i++) {		/* Load partition offset in the MBR */
 		mbr_pt[i + j] = ld_dword(fs->win + MBR_Table + i * SZ_PTE + PTE_StLba);
