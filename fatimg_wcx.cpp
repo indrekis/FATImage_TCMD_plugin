@@ -1757,7 +1757,7 @@ extern "C" {
 	//// write-mode functions
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
 
-		//! TODO: prints only the first file in AddList, not all of them.
+		//! TODO: currently prints only the first file in AddList, not all of them.
 		plugin_config.log_print_dbg("Info# PackFiles() Called with: PackedFile=\'%s\'; "
 			"SubPath=\'%s\'; SrcPath=\'%s\'; AddList=\'%s\'; Flags =0x%02X",
 			PackedFile ? PackedFile : "NULL", SubPath ? SubPath : "NULL", SrcPath ? SrcPath : "NULL", AddList ? AddList : "NULL", Flags
@@ -1808,78 +1808,78 @@ extern "C" {
 		}
 
 		FatFS_mounter_t fatfs_RAII{ logical_drive_number, PackedFile };
-		using namespace std::string_literals;
+
 		if (fatfs_RAII.get_error() != FR_OK) 
 			return E_UNKNOWN_FORMAT;
-		try {
-			for (const char* current = AddList; current && *current != '\0'; current += std::strlen(current) + 1) {
-				// std::string srcFullPath{ SrcPath ? SrcPath : "" };
-				minimal_fixed_string_t<MAX_PATH> srcFullPath{ SrcPath ? SrcPath : "" };
-				srcFullPath += current;
 
-				std::string targetPath{ fatfs_RAII.get_disk() };
+		for (const char* current = AddList; current && *current != '\0'; current += std::strlen(current) + 1) {
+			// std::string srcFullPath{ SrcPath ? SrcPath : "" };
+			minimal_fixed_string_t<MAX_PATH> srcFullPath{ SrcPath ? SrcPath : "" };
+			srcFullPath += current;
+
+			std::string targetPath{ fatfs_RAII.get_disk() };
+			targetPath += "\\";
+			if (SubPath && std::strlen(SubPath) > 0) {
+				targetPath += SubPath;
 				targetPath += "\\";
-				if (SubPath && std::strlen(SubPath) > 0) {
-					targetPath += SubPath;
-					targetPath += "\\";
+			}
+			targetPath += current;
+			if (have_many_partitions) {
+				targetPath.erase(2, 2); // Erase disk letter
+			}
+
+			if ( is_dir(srcFullPath.data()) ) {  // If it's a dir
+				// Create a dir in FAT img
+
+				int res = PackDirectory(srcFullPath.data(), targetPath);
+				if (res != 0) {
+					// Directory packing failed
+					return res;
 				}
-				targetPath += current;
-				if (have_many_partitions) {
-					targetPath.erase(2, 2); // Erase disk letter
-				}
+				continue;
+			}
 
-				if ( is_dir(srcFullPath.data()) ) {  // If it's a dir
-					// Create a dir in FAT img
+			auto srcFile = open_file_shared_read(srcFullPath.data());
+			if (!srcFile) {
+				// Cannot open source file
+				return E_EOPEN;
+			}
+			auto srcFileSize = get_file_size(srcFile);
 
-					int res = PackDirectory(srcFullPath.data(), targetPath);
-					if (res != 0) {
-						// Directory packing failed
-						return res;
-					}
-					continue;
-				}
+			FIL dstFile;
+			FRESULT fr = f_open(&dstFile, targetPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
+			if (fr != FR_OK) {
+				close_file(srcFile);
+				return E_BAD_ARCHIVE;
+			}
 
-				auto srcFile = open_file_shared_read(srcFullPath.data());
-				if (!srcFile) {
-					// Cannot open source file
-					return E_EOPEN;
-				}
-				auto srcFileSize = get_file_size(srcFile);
-
-				FIL dstFile;
-				FRESULT fr = f_open(&dstFile, targetPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
-				if (fr != FR_OK) {
-					close_file(srcFile);
-					return E_BAD_ARCHIVE;
-				}
-
-				std::unique_ptr<char[]> buffer{ new(nothrow) char[srcFileSize] };
-				if(!buffer) {
-					close_file(srcFile);
-					f_close(&dstFile);
-					return E_NO_MEMORY;
-				}
-
-				auto read_bytes = read_file(srcFile, buffer.get(), srcFileSize); // Read the whole file into memory
-				// TODO: check read_bytes == srcFileSize
-
-				UINT bytesWritten = 0;
-				fr = f_write(&dstFile, buffer.get(), static_cast<UINT>(read_bytes), &bytesWritten);
-				if (fr != FR_OK || bytesWritten != read_bytes) {
-					// Write error occurred
-					close_file(srcFile);
-					f_close(&dstFile);
-					return E_EWRITE;
-				}
-
+			std::unique_ptr<char[]> buffer{ new(nothrow) char[srcFileSize] };
+			if(!buffer) {
 				close_file(srcFile);
 				f_close(&dstFile);
+				return E_NO_MEMORY;
 			}
+
+			auto read_bytes = read_file(srcFile, buffer.get(), srcFileSize); // Read the whole file into memory
+			if (read_bytes != srcFileSize) {
+				plugin_config.log_print_dbg("Warning# in PackFiles, read_file failed, requested %d bytes, read %d.",
+					srcFileSize, read_bytes);
+				return E_EREAD;
+			}
+
+			UINT bytesWritten = 0;
+			fr = f_write(&dstFile, buffer.get(), static_cast<UINT>(read_bytes), &bytesWritten);
+			if (fr != FR_OK || bytesWritten != read_bytes) {
+				// Write error occurred
+				close_file(srcFile);
+				f_close(&dstFile);
+				return E_EWRITE;
+			}
+
+			close_file(srcFile);
+			f_close(&dstFile);
 		}
-		catch (...) {
-			// Unmount filesystem in case of any unexpected errors
-			return E_UNKNOWN_FORMAT;
-		}
+
 
 		return 0;
 	}
