@@ -223,6 +223,7 @@ Problems and limitations
   * The absolute majority of HDDs created in the 1990s and later are LBA.
 * Partial support of Unicode in filenames, the code implements only ANSI functions for now.
   * As a result, the path is limited to 260-1 symbols max.
+  * Not tested thoroughly for the path length close to PATH_MAX, 260 for Windows.
 * No support for the 8" images, including 86-DOS and CP/M images.
 * Directories data, time, and some attributes are not set properly.
 * Not yet tested on large (close to 2 TB) images.

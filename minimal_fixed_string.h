@@ -75,6 +75,16 @@ public:
 		else
 			return last - data();
 	}
+
+	minimal_fixed_string_t& operator+=(const minimal_fixed_string_t& rhs) {
+		push_back(rhs);
+		return *this;
+	}
+
+	minimal_fixed_string_t& operator+=(const char* rhs) {
+		push_back(rhs);
+		return *this;
+	}
 }; 
 
 #endif 

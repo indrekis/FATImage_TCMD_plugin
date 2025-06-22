@@ -1813,7 +1813,8 @@ extern "C" {
 			return E_UNKNOWN_FORMAT;
 		try {
 			for (const char* current = AddList; current && *current != '\0'; current += std::strlen(current) + 1) {
-				std::string srcFullPath{ SrcPath ? SrcPath : "" };
+				// std::string srcFullPath{ SrcPath ? SrcPath : "" };
+				minimal_fixed_string_t<MAX_PATH> srcFullPath{ SrcPath ? SrcPath : "" };
 				srcFullPath += current;
 
 				std::string targetPath{ fatfs_RAII.get_disk() };
@@ -1827,10 +1828,10 @@ extern "C" {
 					targetPath.erase(2, 2); // Erase disk letter
 				}
 
-				if ( is_dir(srcFullPath.c_str()) ) {  // If it's a dir
+				if ( is_dir(srcFullPath.data()) ) {  // If it's a dir
 					// Create a dir in FAT img
 
-					int res = PackDirectory(srcFullPath, targetPath);
+					int res = PackDirectory(srcFullPath.data(), targetPath);
 					if (res != 0) {
 						// Directory packing failed
 						return res;
@@ -1838,7 +1839,7 @@ extern "C" {
 					continue;
 				}
 
-				auto srcFile = open_file_shared_read(srcFullPath.c_str());
+				auto srcFile = open_file_shared_read(srcFullPath.data());
 				if (!srcFile) {
 					// Cannot open source file
 					return E_EOPEN;
