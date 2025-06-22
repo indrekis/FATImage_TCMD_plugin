@@ -1837,12 +1837,9 @@ extern "C" {
 		}
 	};
 
-	// Flags: 
-	// PK_PACK_MOVE_FILES         1 Delete original after packing
-    // PK_PACK_SAVE_PATHS         2 Save path names of files
-	// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
-
 	// TODO: Implement flags
+	// PK_PACK_MOVE_FILES         1 Delete original after packing
+	// PK_PACK_SAVE_PATHS         2 Save path names of files
 
 	//// write-mode functions
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
@@ -1852,6 +1849,9 @@ extern "C" {
 			"SubPath=\'%s\'; SrcPath=\'%s\'; AddList=\'%s\'; Flags =0x%02X",
 			PackedFile ? PackedFile : "NULL", SubPath ? SubPath : "NULL", SrcPath ? SrcPath : "NULL", AddList ? AddList : "NULL", Flags
 								   ); 
+		if (Flags & PK_PACK_ENCRYPT) {
+			plugin_config.log_print_dbg("Warning# Plugin does not supports encryption.");
+		}
 		
 		bool have_many_partitions;
 		{
