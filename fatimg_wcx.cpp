@@ -1654,8 +1654,6 @@ extern "C" {
 					// FILE* srcFile = std::fopen(srcFullPath.data(), "rb");
 					if (!srcFile) {
 						// Cannot open source file
-						// f_mount(nullptr, lv_drv_num.c_str(), 0); // TODO: check if needed and fix
-						// fclose(fp);
 						return E_EOPEN;
 					}
 					auto srcFileSize = get_file_size(srcFile);
@@ -1681,7 +1679,7 @@ extern "C" {
 					fr = f_write(&dstFile, buffer.get(), static_cast<UINT>(read_bytes), &bytesWritten);
 					if (fr != FR_OK || bytesWritten != read_bytes) {
 						// Write error occurred
-						f_unlink(dstFullPath.c_str());
+						// f_unlink(dstFullPath.c_str());
 						close_file(srcFile);
 						f_close(&dstFile);
 						return E_EWRITE;
