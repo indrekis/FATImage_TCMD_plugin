@@ -1404,7 +1404,7 @@ extern "C" {
 			return nullptr;
 		}
 		try {
-			arch = std::make_unique<whole_disk_t>( ArchiveData->ArcName, image_file_size,
+			arch = std::make_unique<whole_disk_t>(ArchiveData->ArcName, image_file_size,
 				hArchFile, ArchiveData->OpenMode);
 		}
 		catch (std::bad_alloc&) {
@@ -1456,7 +1456,7 @@ extern "C" {
 	DLLEXPORT int STDCALL ReadHeader(archive_HANDLE hArcData, tHeaderData* HeaderData)
 	{
 		auto& prev_current_disk = hArcData->disks[hArcData->disc_counter];
-		if ( prev_current_disk.is_processed() ) { //-V104
+		if (prev_current_disk.is_processed()) { //-V104
 			prev_current_disk.counter = 0;
 			++hArcData->disc_counter;
 			if (hArcData->disc_counter == hArcData->disks.size()) { //-V104
@@ -1469,7 +1469,7 @@ extern "C" {
 		auto& current_disk = hArcData->disks[hArcData->disc_counter];
 		strcpy(HeaderData->ArcName, hArcData->archname.data());
 		if (hArcData->disks.size() == 1) {
-			if(!current_disk.arc_dir_entries.empty())
+			if (!current_disk.arc_dir_entries.empty())
 				strcpy(HeaderData->FileName, current_disk.arc_dir_entries[current_disk.counter].PathName.data());
 			else
 				return E_END_ARCHIVE;
@@ -1477,16 +1477,16 @@ extern "C" {
 		else {
 			auto disk_name = hArcData->get_disk_prefix(hArcData->disc_counter); // Case of empty or unknown partitions
 			//! If disk empty -- put only dir with its name
-			if ( !hArcData->disks[hArcData->disc_counter].is_known_FS_type() ) {
+			if (!hArcData->disks[hArcData->disc_counter].is_known_FS_type()) {
 				disk_name.pop_back();
 				disk_name.push_back("_Unknown");
 			}
-			else if( !hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty() )
+			else if (!hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty())
 				disk_name.push_back(current_disk.arc_dir_entries[current_disk.counter].PathName);
 			strcpy(HeaderData->FileName, disk_name.data());
 		}
 		if (!hArcData->disks[hArcData->disc_counter].arc_dir_entries.empty() &&
-			hArcData->disks[hArcData->disc_counter].is_known_FS_type() )
+			hArcData->disks[hArcData->disc_counter].is_known_FS_type())
 		{
 			HeaderData->FileAttr = current_disk.arc_dir_entries[current_disk.counter].FileAttr;
 			HeaderData->FileTime = current_disk.arc_dir_entries[current_disk.counter].FileTime;
@@ -1572,14 +1572,14 @@ extern "C" {
 	DLLEXPORT void STDCALL SetChangeVolProc(archive_HANDLE hArcData, tChangeVolProc pChangeVolProc)
 	{
 		// Can be called while hArcData is not initialized yet, so made it static
-		hArcData->pLocChangeVol = pChangeVolProc; 
+		hArcData->pLocChangeVol = pChangeVolProc;
 	}
 
 	// This function allows you to notify user about the progress when you un/pack files
 	DLLEXPORT void STDCALL SetProcessDataProc(archive_HANDLE hArcData, tProcessDataProc pProcessDataProc)
 	{
 		// Can be called while hArcData is not initialized yet, so made it static
-		hArcData->pLocProcessData = pProcessDataProc; 
+		hArcData->pLocProcessData = pProcessDataProc;
 	}
 
 	// PackSetDefaultParams is called immediately after loading the DLL, before any other function. 
@@ -1694,7 +1694,7 @@ extern "C" {
 		}
 		catch (const std::filesystem::filesystem_error& e) {
 			// Handle filesystem-related errors
-			
+
 			return E_BAD_ARCHIVE;
 		}
 		catch (...) {
@@ -1713,20 +1713,32 @@ extern "C" {
 	{1, 0}
 	};
 
-	
+	constexpr int floppy_vol_index = sizeof(VolToPart) / sizeof(PARTITION) - 1;
+
+	constexpr unsigned int max_FatFS_disks = 'Z' - 'A'; // 'C' is used below intentionally
+
+	bool is_FatFS_disk_letter_OK(char drive_letter) {
+		return (drive_letter >= 'C' && drive_letter <= 'Z');
+	}
+
+	int FatFS_driver_letter_to_number(char drive_letter) {
+		return drive_letter - 'C';
+	}
+
 	// RAII type to close FatFS disk and close image file
 	class FatFS_mounter_t {
 		FATFS fs;
-		char disk_number[3];
+		char disk_number[3] = "0:";
 		FRESULT fs_result;
 	public:
-		FatFS_mounter_t(const char* disk_number_in, const char* archive_name) {
+		FatFS_mounter_t(int disk_number_in, const char* archive_name) {
 			strncpy(fs.image_path, archive_name, MAX_PATH);
-			strncpy(disk_number, disk_number_in, sizeof(disk_number));
+			disk_number[0] += disk_number_in;
 			fs_result = f_mount(&fs, disk_number, 1);
 		}
 
 		FRESULT get_error() const { return fs_result; }
+		const char* get_disk() const { return disk_number; }
 		
 		// Unmount and stop image
 		~FatFS_mounter_t() {
@@ -1750,8 +1762,6 @@ extern "C" {
 			"SubPath=\'%s\'; SrcPath=\'%s\'; AddList=\'%s\'; Flags =0x%02X",
 			PackedFile ? PackedFile : "NULL", SubPath ? SubPath : "NULL", SrcPath ? SrcPath : "NULL", AddList ? AddList : "NULL", Flags
 								   ); 
-		assert(SrcPath);
-		int logical_drive_number = 4; //!
 
 		size_t image_file_size = get_file_size(PackedFile);
 		auto hArchFile = open_file_read_shared_write(PackedFile);
@@ -1773,68 +1783,51 @@ extern "C" {
 		close_file(hArchFile);
 
 		char drive_letter;
-		if (arch.disks.size() >= 2) {
+		int logical_drive_number = floppy_vol_index; 
+		bool have_many_partitions = (arch.disks.size() >= 2);
+
+		if ( have_many_partitions ) {
 			if (SubPath != NULL) {
 				drive_letter = toupper(SubPath[0]);
-
-				if (drive_letter >= 'C' && drive_letter <= 'F') {
-					logical_drive_number = drive_letter - 'C';
-				}
-				else {
-					return E_ECLOSE;
-				}
 			}
 			else {
-				if (AddList != NULL && std::strlen(AddList) > 1) {
+				if (AddList != NULL && std::strlen(AddList) > 1 && AddList[1] == '\\') {
 					drive_letter = toupper(AddList[0]);
-
-					if (drive_letter >= 'C' && drive_letter <= 'F' && AddList[1] == '\\') {
-						logical_drive_number = drive_letter - 'C';
-					}
-					else {
-						return E_ECLOSE;
-					}
 				}
 				else {
-					return E_ECLOSE;
+					return E_NOT_SUPPORTED;
 				}
 			}
+
+			if (is_FatFS_disk_letter_OK(drive_letter)) {
+				logical_drive_number = FatFS_driver_letter_to_number(drive_letter);
+			}
+			else {
+				return E_NOT_SUPPORTED;
+			}
 		}
-		std::string lv_drv_num = std::string(1, '0' + logical_drive_number) + ":";
-		FatFS_mounter_t fatfs_RAII{ lv_drv_num.c_str(), PackedFile };
+
+		FatFS_mounter_t fatfs_RAII{ logical_drive_number, PackedFile };
+		using namespace std::string_literals;
 		if (fatfs_RAII.get_error() != FR_OK) 
 			return E_UNKNOWN_FORMAT;
 		try {
-			for (char* current = AddList; current && *current != '\0'; current += std::strlen(current) + 1) {
-				std::string srcFullPath = std::string(SrcPath) + current;
+			for (const char* current = AddList; current && *current != '\0'; current += std::strlen(current) + 1) {
+				std::string srcFullPath{ SrcPath ? SrcPath : "" };
+				srcFullPath += current;
 
-				if( arch.disks.size() >= 2) {
-					if (current[1] == '\\' && current[0] >= 'C' && current[0] <= 'F') {
-						current += 2;
-					}
-				}
-
-				std::string targetPath;
+				std::string targetPath{ fatfs_RAII.get_disk() };
+				targetPath += "\\";
 				if (SubPath && std::strlen(SubPath) > 0) {
-					targetPath = std::string(SubPath) + "\\" + current;
-
-					if (arch.disks.size() >= 2) {
-						if (targetPath.size() >= 2 && targetPath[1] == '\\') {
-							targetPath = targetPath.substr(2);
-						}
-					}
-					targetPath = lv_drv_num + "\\" + targetPath;
+					targetPath += SubPath;
+					targetPath += "\\";
 				}
-				else {
-					targetPath = lv_drv_num + "\\" + std::string(current);
+				targetPath += current;
+				if (have_many_partitions) {
+					targetPath.erase(2, 2); // Erase disk letter
 				}
 
-				DWORD fileAttributes = GetFileAttributes(srcFullPath.c_str());
-				if (fileAttributes == INVALID_FILE_ATTRIBUTES) {
-					continue;  // Couldn't get file attributes
-				}
-
-				if (fileAttributes & FILE_ATTRIBUTE_DIRECTORY) {  // If it's a dir
+				if ( is_dir(srcFullPath.c_str()) ) {  // If it's a dir
 					// Create a dir in FAT img
 
 					int res = PackDirectory(srcFullPath, targetPath);
@@ -1940,9 +1933,8 @@ extern "C" {
 				return E_ECLOSE;
 			}
 		}
-		std::string lv_drv_num = std::string(1, '0' + logical_drive_number) + ":";
 
-		FatFS_mounter_t fatfs_RAII{ lv_drv_num.c_str(), PackedFile };
+		FatFS_mounter_t fatfs_RAII{ logical_drive_number, PackedFile };
 		if (fatfs_RAII.get_error() != FR_OK)
 			return E_UNKNOWN_FORMAT;
 
@@ -2010,7 +2002,7 @@ extern "C" {
 				}
 			}
 
-			deletePath = lv_drv_num + "\\" + deletePath;
+			deletePath = std::string(fatfs_RAII.get_disk()) + "\\" + deletePath;
 
 			FILINFO info;
 			FRESULT fr = f_stat(deletePath.c_str(), &info);

@@ -121,6 +121,19 @@ bool set_file_attributes(const char* filename, uint32_t attribute){
 	return SetFileAttributes(filename, attribute);
 }
 
+uint32_t get_file_attributes(const char* filename)
+{
+	return GetFileAttributes(filename);
+}
+
+bool is_dir(const char* filename)
+{
+	auto res = get_file_attributes(filename);
+	if (res == INVALID_FILE_ATTRIBUTES)
+		return false; // Is this enough?
+	return  res & FILE_ATTRIBUTE_DIRECTORY;
+}
+
 size_t get_file_size(const char* filename)
 {
 	WIN32_FILE_ATTRIBUTE_DATA fad;
