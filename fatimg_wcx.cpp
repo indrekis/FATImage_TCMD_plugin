@@ -1864,13 +1864,16 @@ extern "C" {
 			if (read_bytes != srcFileSize) {
 				plugin_config.log_print_dbg("Warning# in PackFiles, read_file failed, requested %d bytes, read %d.",
 					srcFileSize, read_bytes);
+				close_file(srcFile);
+				f_close(&dstFile);
 				return E_EREAD;
 			}
 
 			UINT bytesWritten = 0;
 			fr = f_write(&dstFile, buffer.get(), static_cast<UINT>(read_bytes), &bytesWritten);
 			if (fr != FR_OK || bytesWritten != read_bytes) {
-				// Write error occurred
+				plugin_config.log_print_dbg("Warning# in PackFiles, f_write failed, requested %d bytes, wrote %d.",
+					read_bytes, bytesWritten);
 				close_file(srcFile);
 				f_close(&dstFile);
 				return E_EWRITE;
