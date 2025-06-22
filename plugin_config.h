@@ -92,4 +92,6 @@ public:
 
 };
 
+extern plugin_config_t plugin_config;
+
 #endif 
