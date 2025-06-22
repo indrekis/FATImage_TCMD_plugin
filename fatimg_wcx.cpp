@@ -33,9 +33,6 @@
 
 #include <dirent.h> 
 
-#include <fstream>
-
-
 // #define FLTK_ENABLED_EXPERIMENTAL  // Here for the quick tests -- should be defined by the build system
 
 #ifdef FLTK_ENABLED_EXPERIMENTAL
@@ -1625,44 +1622,40 @@ extern "C" {
 		return PK_CAPS_NEW | PK_CAPS_MODIFY | PK_CAPS_DELETE | PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_MULTIPLE;
 	}
 
-	int PackDirectory(const std::string& hostPath, const std::string& fatPath) {
-
-		std::string name;
-		std::string srcFullPath;
-		std::string dstFullPath;
-		FILE* srcFile = nullptr;
-		FRESULT fr;
+	int PackDirectory(const char* hostPath, const char* fatPath) {
 		int overallResult = 0;
 
-
-		fr = f_mkdir(fatPath.c_str());
-		if (fr != FR_OK && fr != FR_EXIST) return E_ECREATE;
-
+		FRESULT fr = f_mkdir(fatPath);
+		if (fr != FR_OK && fr != FR_EXIST) 
+			return E_ECREATE;
 		
-		DIR* dir = opendir(hostPath.c_str());
+		DIR* dir = opendir(hostPath);
 		if (dir == nullptr) {
 			auto lasterrno = errno; 
 			plugin_config.log_print_dbg("Warning# In PackDirectory with: hostPath=\'%s\'; "
 				"fatPath=\'%s\'; with errno = %d",
-				hostPath.c_str(), fatPath.c_str(), lasterrno
+				hostPath, fatPath, lasterrno
 			);
 			return E_EREAD;
 		}
 		for (dirent* entry = readdir(dir); entry != nullptr; entry = readdir(dir)) {
 			if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
 				continue;
-			srcFullPath = hostPath + "\\" + entry->d_name;
-			dstFullPath = fatPath + "\\" + entry->d_name;
-			if (is_dir(srcFullPath.c_str())) {
-				int res = PackDirectory(srcFullPath, dstFullPath);
+			minimal_fixed_string_t<MAX_PATH> srcFullPath{ hostPath };
+			srcFullPath += "\\";
+			srcFullPath += entry->d_name;
+			minimal_fixed_string_t<MAX_PATH> dstFullPath{ fatPath };
+			dstFullPath += "\\";
+			dstFullPath += entry->d_name;
+			if (is_dir(srcFullPath.data())) {
+				int res = PackDirectory(srcFullPath.data(), dstFullPath.data());
 				if (res != 0) {
 					overallResult = res;
 					continue;
 				}
 			} else 
 			{
-				auto srcFile = open_file_shared_read(srcFullPath.c_str());
-				// FILE* srcFile = std::fopen(srcFullPath.data(), "rb");
+				auto srcFile = open_file_shared_read(srcFullPath.data());
 				if (!srcFile) {
 					// Cannot open source file
 					return E_EOPEN;
@@ -1670,7 +1663,7 @@ extern "C" {
 				auto srcFileSize = get_file_size(srcFile);
 
 				FIL dstFile;
-				fr = f_open(&dstFile, dstFullPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
+				fr = f_open(&dstFile, dstFullPath.data(), FA_WRITE | FA_CREATE_ALWAYS);
 				if (fr != FR_OK) {
 					close_file(srcFile); // TODO: Test! 
 					return E_BAD_ARCHIVE;
@@ -1819,7 +1812,6 @@ extern "C" {
 			return E_UNKNOWN_FORMAT;
 
 		for (const char* current = AddList; current && *current != '\0'; current += std::strlen(current) + 1) {
-			// std::string srcFullPath{ SrcPath ? SrcPath : "" };
 			minimal_fixed_string_t<MAX_PATH> srcFullPath{ SrcPath ? SrcPath : "" };
 			srcFullPath += current;
 
@@ -1963,7 +1955,6 @@ extern "C" {
 				minimal_fixed_string_t<MAX_PATH> fullPath{ path };
 				fullPath += "\\";
 				fullPath += fno.fname;
-				// std::string fullPath = std::string(path) + "\\" + fno.fname;
 				if (fno.fattrib & AM_DIR) {
 					// Recurse into subdirectory
 					res = recursive_del_ref(fullPath.data(), recursive_del_ref);
