@@ -1764,27 +1764,30 @@ extern "C" {
 								   ); 
 
 		size_t image_file_size = get_file_size(PackedFile);
-		auto hArchFile = open_file_read_shared_write(PackedFile);
-		if( hArchFile == file_open_error_v )
-		{
-			return E_EREAD;
-		}
-		// Caching results here would complicate code too much as for now
-		whole_disk_t arch{ PackedFile, image_file_size,
-				hArchFile, PK_OM_LIST };
 
-		auto err_code = arch.process_volumes();
-		if( err_code != 0 )
-		{
-			return E_EREAD;
-		}
+		bool have_many_partitions;
 
-		//! TODO: -- див. опис в DeleteFiles біля такого ж рядка.
-		close_file(hArchFile);
+		{
+			auto hArchFile = open_file_read_shared_write(PackedFile);
+			if (hArchFile == file_open_error_v)
+			{
+				return E_EREAD;
+			}
+
+			// Caching results here would complicate code too much as for now
+			whole_disk_t arch{ PackedFile, image_file_size,
+					hArchFile, PK_OM_LIST };
+
+			auto err_code = arch.process_volumes();
+			if (err_code != 0)
+			{
+				return E_EREAD;
+			}
+			have_many_partitions = (arch.disks.size() >= 2);
+		}
 
 		char drive_letter;
 		int logical_drive_number = floppy_vol_index; 
-		bool have_many_partitions = (arch.disks.size() >= 2);
 
 		if ( have_many_partitions ) {
 			if (SubPath != NULL) {
