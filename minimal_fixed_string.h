@@ -52,6 +52,17 @@ public:
 		size_m += strnlen_s(data() + size(), capacity() - size());
 		return res;
 	}
+    void erase(size_t beg, size_t number) {
+		if (beg >= size_m || number == 0) return;
+		if (beg + number >= size_m) {
+			size_m = beg;
+			data_m[size_m] = '\0';
+			return;
+		}
+		std::memmove(data_m.data() + beg, data_m.data() + beg + number, size_m - beg - number + 1);
+		size_m -= number;
+		data_m[size_m] = '\0';
+    }
 	void clear() {
 		size_m = 0;
 		data_m[size_m] = '\0';
@@ -86,5 +97,17 @@ public:
 		return *this;
 	}
 }; 
+
+template<size_t N>
+minimal_fixed_string_t<N> operator+(minimal_fixed_string_t<N> lhs, const char* rhs) {
+    lhs.push_back(rhs);
+    return lhs;
+}
+
+template<size_t N>
+minimal_fixed_string_t<N> operator+(minimal_fixed_string_t<N> lhs, const minimal_fixed_string_t<N>& rhs) {
+	lhs.push_back(rhs);
+	return lhs;
+}
 
 #endif 

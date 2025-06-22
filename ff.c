@@ -5923,7 +5923,8 @@ FRESULT f_mkfs (
 	const TCHAR* path,		/* Logical drive number */
 	const MKFS_PARM* opt,	/* Format options */
 	void* work,				/* Pointer to working buffer (null: use len bytes of heap memory) */
-	UINT len				/* Size of working buffer [byte] */
+	UINT len,				/* Size of working buffer [byte] */
+	const TCHAR* image_path /* Added to support disk images */
 )
 {
 	static const WORD cst[] = {1, 4, 16, 64, 256, 512, 0};	/* Cluster size boundary for FAT volume (4K sector unit) */
@@ -5951,7 +5952,7 @@ FRESULT f_mkfs (
 	ipart = LD2PT(vol);		/* Hosting partition (0:create as new, 1..:existing partition) */
 
 	/* Initialize the hosting physical drive */
-	ds = disk_initialize(pdrv);
+	ds = disk_initialize(pdrv, image_path);
 	if (ds & STA_NOINIT) return FR_NOT_READY;
 	if (ds & STA_PROTECT) return FR_WRITE_PROTECTED;
 
@@ -6427,7 +6428,8 @@ FRESULT f_mkfs (
 FRESULT f_fdisk (
 	BYTE pdrv,			/* Physical drive number */
 	const LBA_t ptbl[],	/* Pointer to the size table for each partitions */
-	void* work			/* Pointer to the working buffer (null: use heap memory) */
+	void* work,			/* Pointer to the working buffer (null: use heap memory) */
+	const TCHAR* image_path /* Added to support disk images */
 )
 {
 	BYTE *buf = (BYTE*)work;
@@ -6436,7 +6438,7 @@ FRESULT f_fdisk (
 
 
 	/* Initialize the physical drive */
-	stat = disk_initialize(pdrv);
+	stat = disk_initialize(pdrv, image_path);
 	if (stat & STA_NOINIT) return FR_NOT_READY;
 	if (stat & STA_PROTECT) return FR_WRITE_PROTECTED;
 

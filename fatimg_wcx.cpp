@@ -1754,6 +1754,11 @@ extern "C" {
     // PK_PACK_SAVE_PATHS         2 Save path names of files
 	// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
 
+	// TODO: Overwrite read-only files
+	// TODO: preserve file attributes
+	// TODO: preserve file date and time 
+	// TODO: Implement flags
+
 	//// write-mode functions
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
 
@@ -1762,12 +1767,10 @@ extern "C" {
 			"SubPath=\'%s\'; SrcPath=\'%s\'; AddList=\'%s\'; Flags =0x%02X",
 			PackedFile ? PackedFile : "NULL", SubPath ? SubPath : "NULL", SrcPath ? SrcPath : "NULL", AddList ? AddList : "NULL", Flags
 								   ); 
-
-		size_t image_file_size = get_file_size(PackedFile);
-
+		
 		bool have_many_partitions;
-
 		{
+			size_t image_file_size = get_file_size(PackedFile);
 			auto hArchFile = open_file_read_shared_write(PackedFile);
 			if (hArchFile == file_open_error_v)
 			{
@@ -1820,7 +1823,7 @@ extern "C" {
 			minimal_fixed_string_t<MAX_PATH> srcFullPath{ SrcPath ? SrcPath : "" };
 			srcFullPath += current;
 
-			std::string targetPath{ fatfs_RAII.get_disk() };
+			minimal_fixed_string_t<MAX_PATH> targetPath{ fatfs_RAII.get_disk() };
 			targetPath += "\\";
 			if (SubPath && std::strlen(SubPath) > 0) {
 				targetPath += SubPath;
@@ -1834,7 +1837,7 @@ extern "C" {
 			if ( is_dir(srcFullPath.data()) ) {  // If it's a dir
 				// Create a dir in FAT img
 
-				int res = PackDirectory(srcFullPath.data(), targetPath);
+				int res = PackDirectory(srcFullPath.data(), targetPath.data());
 				if (res != 0) {
 					// Directory packing failed
 					return res;
@@ -1850,7 +1853,7 @@ extern "C" {
 			auto srcFileSize = get_file_size(srcFile);
 
 			FIL dstFile;
-			FRESULT fr = f_open(&dstFile, targetPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
+			FRESULT fr = f_open(&dstFile, targetPath.data(), FA_WRITE | FA_CREATE_ALWAYS);
 			if (fr != FR_OK) {
 				close_file(srcFile);
 				return E_BAD_ARCHIVE;
@@ -1892,52 +1895,52 @@ extern "C" {
 	
 	// TODO: Remove read-only files
 	DLLEXPORT int STDCALL DeleteFiles(char *PackedFile, char *DeleteList) {
+		assert(DeleteList);
 		//! TODO: fix: prints only the first file in DeleteList, not all of them.
 		plugin_config.log_print_dbg("Info# DeleteFiles() Called with: PackedFile=\'%s\'; DeleteList=\'%s\'",
 			PackedFile ? PackedFile : "NULL", DeleteList ? DeleteList : "NULL"
 		);
 
-		int logical_drive_number = 4;
+		int logical_drive_number = floppy_vol_index;
 
-		size_t image_file_size = get_file_size(PackedFile);
-		auto hArchFile = open_file_read_shared_write(PackedFile);
-		if (hArchFile == file_open_error_v)
+		bool have_many_partitions;
 		{
-			return E_EREAD;
+			size_t image_file_size = get_file_size(PackedFile);
+			auto hArchFile = open_file_read_shared_write(PackedFile);
+			if (hArchFile == file_open_error_v)
+			{
+				return E_EREAD;
+			}
+
+			// Caching results here would complicate code too much as for now
+			whole_disk_t arch{ PackedFile, image_file_size,
+					hArchFile, PK_OM_LIST };
+
+			auto err_code = arch.process_volumes();
+			if (err_code != 0)
+			{
+				return E_EREAD;
+			}
+			have_many_partitions = (arch.disks.size() >= 2);
 		}
-		// Caching results here would complicate code too much as for now
-		whole_disk_t arch{ PackedFile, image_file_size,
-				hArchFile, PK_OM_LIST };
 
-		auto err_code = arch.process_volumes();
-		if (err_code != 0)
-		{
-			return E_EREAD;
-		}
-
-		//! TODO: Чомусь не працює спільне використання -- fopen() фейлиться з кодом 22.
-		//! Тимчасово закриваю, хоча це ламає інваріант whole_disk_t. 
-		//! Після переписання diskio.c, проблема мала б зникнути
-		close_file(hArchFile);
-
-
-		if (arch.disks.size() >= 2) {
-
+		if (have_many_partitions) {
 			if (DeleteList && std::strlen(DeleteList) >= 2) {
 				char drive_letter = toupper(DeleteList[0]);
 
-			    if (drive_letter >= 'C' && drive_letter <= 'F' && DeleteList[1] == '\\') {
-				   logical_drive_number = drive_letter - 'C';
-			    }
-			    else {
+				if (is_FatFS_disk_letter_OK(drive_letter)) {
+					logical_drive_number = FatFS_driver_letter_to_number(drive_letter);
+				}
+				else {
 					plugin_config.log_print_dbg("Warning# Invalid drive prefix in DeleteList: %c\n", DeleteList[0]);
-					return E_ECLOSE;
-			    }
+					return E_NOT_SUPPORTED;
+				}
+
 			}
 			else {
 				// to not delete a disk
 				plugin_config.log_print_dbg("Warning# DeleteList does not specify a valid drive or path -- cannot delete partition\n");
-				return E_ECLOSE;
+				return E_NOT_SUPPORTED;
 			}
 		}
 
@@ -1957,20 +1960,31 @@ extern "C" {
 
 				if (strcmp(fno.fname, ".") == 0 || strcmp(fno.fname, "..") == 0) continue;
 
-				std::string fullPath = std::string(path) + "\\" + fno.fname;
+				minimal_fixed_string_t<MAX_PATH> fullPath{ path };
+				fullPath += "\\";
+				fullPath += fno.fname;
+				// std::string fullPath = std::string(path) + "\\" + fno.fname;
 				if (fno.fattrib & AM_DIR) {
 					// Recurse into subdirectory
-					res = recursive_del_ref(fullPath.c_str(), recursive_del_ref);
-					if (res != FR_OK) return res;
+					res = recursive_del_ref(fullPath.data(), recursive_del_ref);
+					if (res != FR_OK) 
+						return res;
 				}
 				else {
-					res = f_unlink(fullPath.c_str());
-					if (res != FR_OK) return res;
+					if (fno.fattrib & AM_RDO) {
+						f_chmod(fullPath.data(), 0, AM_RDO); // Clear Read-only flag
+					}
+					res = f_unlink(fullPath.data());
+					if (res != FR_OK) 
+						return res;
 				}
 			}
 			f_closedir(&dir);
 
 			// Delete the now-empty directory
+			if (fno.fattrib & AM_RDO) { // TODO: test! 
+				f_chmod(path, 0, AM_RDO); // Clear Read-only flag
+			}
 			return f_unlink(path);
 			};
 
@@ -1982,59 +1996,63 @@ extern "C" {
 		char* current = DeleteList;
 
 		while (*current != '\0') {
-			std::string deletePath = current;
+			minimal_fixed_string_t<MAX_PATH> deletePath{ current };
 
-			plugin_config.log_print_dbg("Info# DeleteList entry: \'%s\'", deletePath.c_str());
+			plugin_config.log_print_dbg("Info# DeleteList entry: \'%s\'", deletePath.data());
 
-			if (arch.disks.size() >= 2) {
-
+			if (have_many_partitions) {
 				if (deletePath.size() >= 2 && deletePath[1] == '\\') {
-					deletePath = deletePath.substr(2);
+					deletePath.erase(0, 2);
 				}
 			}
 
 			if (deletePath.size() >= 2) {
 				bool isDirectoryDelete = false;
 
-				if (deletePath.size() >= 3 && deletePath.substr(deletePath.size() - 3) == "*.*") {
+				if (deletePath.size() >= 3 && strcmp( deletePath.data() + deletePath.size() - 3, "*.*") == 0) {
 					isDirectoryDelete = true;
 				}
 
 				// If it's a directory delete command, truncate the path
 				if (isDirectoryDelete) {
-					size_t lastSlash = deletePath.find_last_of("\\/");
-					if (lastSlash != std::string::npos) {
-						deletePath = deletePath.substr(0, lastSlash);
+					size_t lastSlash = deletePath.find_last('\\'); // Can '/' be here?
+					if(lastSlash == deletePath.npos)
+						lastSlash = deletePath.find_last('/');
+					if (lastSlash != deletePath.npos) {
+						deletePath.shrink_to(lastSlash);
 					}
 				}
 			}
 
-			deletePath = std::string(fatfs_RAII.get_disk()) + "\\" + deletePath;
+			deletePath = minimal_fixed_string_t<MAX_PATH>(fatfs_RAII.get_disk()) + "\\" + deletePath;
 
 			FILINFO info;
-			FRESULT fr = f_stat(deletePath.c_str(), &info);
+			FRESULT fr = f_stat(deletePath.data(), &info);
 			if (fr != FR_OK) {
 				plugin_config.log_print_dbg("Warning# f_stat failed on: \'%s\'", DeleteList);
 				return E_ECLOSE;
 			}
 
 			if (info.fattrib & AM_DIR) {
-				fr = recursive_del(deletePath.c_str(), recursive_del); // if it's a dir del recursive
+				fr = recursive_del(deletePath.data(), recursive_del); // if it's a dir del recursive
 			}
 			else {
-				fr = f_unlink(deletePath.c_str()); // unlink the file
+				if (info.fattrib & AM_RDO) {
+					f_chmod(deletePath.data(), 0, AM_RDO); // Clear Read-only flag
+				}
+				fr = f_unlink(deletePath.data()); // unlink the file
 			}
 
 
 
 			if (fr != FR_OK) {
 				// Log failure and return an error code
-				plugin_config.log_print_dbg("Warning# Failed to delete: \'%s\'", deletePath.c_str());
+				plugin_config.log_print_dbg("Warning# Failed to delete: \'%s\'", deletePath.data());
 				anyFailed = true;
 			}
 			else {
 				// Log success for each deleted file
-				plugin_config.log_print_dbg("Info# Successfully deleted file: %s\n", deletePath.c_str());
+				plugin_config.log_print_dbg("Info# Successfully deleted file: %s\n", deletePath.data());
 			}
 			current += strlen(current) + 1; // move onto next file
 		}
