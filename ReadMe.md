@@ -226,6 +226,7 @@ Problems and limitations
   * Not tested thoroughly for the path length close to PATH_MAX, 260 for Windows.
 * No support for the 8" images, including 86-DOS and CP/M images.
 * Directories data, time, and some attributes are not set properly.
+* Processed data size for progress dialog is not set fully precisely -- it would complicate the code a little.
 * Not yet tested on large (close to 2 TB) images.
 * 32-bit plugin version does not support background operation -- TCmd crashes or hangs every time the plugin is used if they are allowed.
 

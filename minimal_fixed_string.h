@@ -32,6 +32,10 @@ public:
 	constexpr const char& operator[](size_t idx) const { return data_m[idx]; }
 	constexpr const char* data() const { return data_m.data(); }
 	constexpr       char* data() { return data_m.data(); }
+	constexpr const char& back() const { return data_m[data_m.size()-1]; }
+	constexpr       char& back() { return data_m[data_m.size() - 1]; }
+	constexpr const char& front() const { return data_m[0]; }
+	constexpr       char& front() { return data_m[0]; }
 	bool push_back(char c) {
 		if (size() == capacity()) return false;
 		data_m[size_m++] = c;

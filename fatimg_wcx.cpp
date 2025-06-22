@@ -1551,6 +1551,13 @@ extern "C" {
 		close_file(hUnpFile);
 		set_file_attributes_ex(dest, cur_entry.FileAttr);
 
+		if (whole_disk_t::pLocProcessData) {
+			// TODO: Second parameter is: "the number of bytes processed since the previous call to the function"...
+			auto res = whole_disk_t::pLocProcessData(dest, get_file_size(dest));
+			if (res == 0)
+				return E_EABORTED;
+		}
+
 		if (Operation == PK_TEST) {
 			delete_file(dest);
 		}
@@ -1645,8 +1652,10 @@ extern "C" {
 			srcFullPath += "\\";
 			srcFullPath += entry->d_name;
 			minimal_fixed_string_t<MAX_PATH> dstFullPath{ fatPath };
-			dstFullPath += "\\";
+			if(dstFullPath.back() != '\'')
+				dstFullPath += "\\";
 			dstFullPath += entry->d_name;
+			
 			if (is_dir(srcFullPath.data())) {
 				int res = PackDirectory(srcFullPath.data(), dstFullPath.data());
 				if (res != 0) {
@@ -1661,6 +1670,12 @@ extern "C" {
 					return E_EOPEN;
 				}
 				auto srcFileSize = get_file_size(srcFile);
+				if (whole_disk_t::pLocProcessData) {
+					// TODO: Second parameter is: "the number of bytes processed since the previous call to the function"...
+					auto res = whole_disk_t::pLocProcessData(srcFullPath.data(), static_cast<int>(srcFileSize));
+					if (res == 0)
+						return E_EABORTED;
+				}
 
 				FIL dstFile;
 				fr = f_open(&dstFile, dstFullPath.data(), FA_WRITE | FA_CREATE_ALWAYS);
@@ -1843,6 +1858,12 @@ extern "C" {
 				return E_EOPEN;
 			}
 			auto srcFileSize = get_file_size(srcFile);
+			if (whole_disk_t::pLocProcessData) {
+				// TODO: Second parameter is: "the number of bytes processed since the previous call to the function"...
+				auto res = whole_disk_t::pLocProcessData(srcFullPath.data(), static_cast<int>(srcFileSize));
+				if (res == 0)
+					return E_EABORTED;
+			}
 
 			FIL dstFile;
 			FRESULT fr = f_open(&dstFile, targetPath.data(), FA_WRITE | FA_CREATE_ALWAYS);
@@ -1964,6 +1985,12 @@ extern "C" {
 					if (fno.fattrib & AM_RDO) {
 						f_chmod(fullPath.data(), 0, AM_RDO); // Clear Read-only flag
 					}
+					if (whole_disk_t::pLocProcessData) {
+						// TODO: Second parameter is: "the number of bytes processed since the previous call to the function"...
+						auto res = whole_disk_t::pLocProcessData(fullPath.data(), 0);
+						if (res == 0)
+							return FR_TIMEOUT; // Just to note cancel pressed
+					}
 					res = f_unlink(fullPath.data());
 					if (res != FR_OK) 
 						return res;
@@ -1987,6 +2014,14 @@ extern "C" {
 
 		while (*current != '\0') {
 			minimal_fixed_string_t<MAX_PATH> deletePath{ current };
+
+			if (whole_disk_t::pLocProcessData) {
+				// TODO: Second parameter is: "the number of bytes processed since the previous call to the function"...
+				auto res = whole_disk_t::pLocProcessData(deletePath.data(), 0);
+				if (res == 0)
+					return E_EABORTED;
+			}
+
 
 			plugin_config.log_print_dbg("Info# DeleteList entry: \'%s\'", deletePath.data());
 
@@ -2020,11 +2055,13 @@ extern "C" {
 			FRESULT fr = f_stat(deletePath.data(), &info);
 			if (fr != FR_OK) {
 				plugin_config.log_print_dbg("Warning# f_stat failed on: \'%s\'", DeleteList);
-				return E_ECLOSE;
+				return E_NOT_SUPPORTED;
 			}
 
 			if (info.fattrib & AM_DIR) {
 				fr = recursive_del(deletePath.data(), recursive_del); // if it's a dir del recursive
+				if (fr == FR_TIMEOUT)
+					return E_EABORTED;
 			}
 			else {
 				if (info.fattrib & AM_RDO) {
@@ -2047,7 +2084,7 @@ extern "C" {
 			current += strlen(current) + 1; // move onto next file
 		}
 
-		return anyFailed ? E_ECLOSE : 0;
+		return anyFailed ? E_EWRITE : 0;
 
 	}
 
