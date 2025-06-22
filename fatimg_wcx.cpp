@@ -1553,7 +1553,7 @@ extern "C" {
 
 		if (whole_disk_t::pLocProcessData) {
 			// TODO: Second parameter is: "the number of bytes processed since the previous call to the function"...
-			auto res = whole_disk_t::pLocProcessData(dest, get_file_size(dest));
+			auto res = whole_disk_t::pLocProcessData(dest, static_cast<int>(get_file_size(dest)));
 			if (res == 0)
 				return E_EABORTED;
 		}
@@ -1629,12 +1629,101 @@ extern "C" {
 		return PK_CAPS_NEW | PK_CAPS_MODIFY | PK_CAPS_DELETE | PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_MULTIPLE;
 	}
 
+	int copy_attributes_and_datetime(const char* src_path, const char* target_path) {
+		auto attribs = get_file_attributes(src_path);
+		BYTE target_attr = 0;
+		if (check_is_RO(attribs))		target_attr |= AM_RDO;
+		if (check_is_Hidden(attribs))	target_attr |= AM_HID;
+		if (check_is_System(attribs))	target_attr |= AM_SYS;
+		if (check_is_Archive(attribs))	target_attr |= AM_ARC;
+
+		FRESULT fr = f_chmod(target_path, target_attr, AM_RDO | AM_HID | AM_SYS | AM_ARC);
+		if (fr != FR_OK)
+			return FR_INVALID_PARAMETER; // Or just ignore?
+
+		auto src_time = get_file_datatime_for_FatFS(src_path);
+		if(src_time.first == -1)
+			return FR_INVALID_PARAMETER;
+
+		FILINFO finfo;
+		finfo.fdate = src_time.first;
+		finfo.ftime = src_time.second;
+		fr = f_utime(target_path, &finfo);
+		if (fr != FR_OK)
+			return FR_INVALID_PARAMETER; // Or just ignore?
+		return 0;
+	}
+
+	int copy_from_host_to_image(const char* src_path, const char* target_path) {
+		auto srcFile = open_file_shared_read(src_path);
+		if (!srcFile) {
+			// Cannot open source file
+			return E_EOPEN;
+		}
+		auto srcFileSize = get_file_size(srcFile);
+		if (whole_disk_t::pLocProcessData) {
+			// TODO: Second parameter is: "the number of bytes processed since the previous call to the function"...
+			auto res = whole_disk_t::pLocProcessData(const_cast<char*>(src_path), static_cast<int>(srcFileSize));
+			if (res == 0)
+				return E_EABORTED;
+		}
+
+		FILINFO fno;
+		FRESULT fr = f_stat(target_path, &fno);
+		if (fr == FR_OK && (fno.fattrib & AM_RDO)) {
+			f_chmod(target_path, 0, AM_RDO); // Clear Read-only flag
+		}
+
+		FIL dstFile;
+		fr = f_open(&dstFile, target_path, FA_WRITE | FA_CREATE_ALWAYS);
+		if (fr != FR_OK) {
+			close_file(srcFile);
+			return E_BAD_ARCHIVE;
+		}
+
+		std::unique_ptr<char[]> buffer{ new(nothrow) char[srcFileSize] };
+		if (!buffer) {
+			close_file(srcFile);
+			f_close(&dstFile);
+			return E_NO_MEMORY;
+		}
+
+		auto read_bytes = read_file(srcFile, buffer.get(), srcFileSize); // Read the whole file into memory
+		if (read_bytes != srcFileSize) {
+			plugin_config.log_print_dbg("Warning# in PackFiles, read_file failed, requested %d bytes, read %d.",
+				srcFileSize, read_bytes);
+			close_file(srcFile);
+			f_close(&dstFile);
+			return E_EREAD;
+		}
+
+		UINT bytesWritten = 0;
+		fr = f_write(&dstFile, buffer.get(), static_cast<UINT>(read_bytes), &bytesWritten);
+		if (fr != FR_OK || bytesWritten != read_bytes) {
+			plugin_config.log_print_dbg("Warning# in PackFiles, f_write failed, requested %d bytes, wrote %d.",
+				read_bytes, bytesWritten);
+			close_file(srcFile);
+			f_close(&dstFile);
+			copy_attributes_and_datetime(src_path, target_path);
+			return E_EWRITE;
+		}
+
+		close_file(srcFile);
+		f_close(&dstFile);
+
+		copy_attributes_and_datetime(src_path, target_path);
+
+		return 0;
+	}
+	
+
 	int PackDirectory(const char* hostPath, const char* fatPath) {
 		int overallResult = 0;
 
 		FRESULT fr = f_mkdir(fatPath);
 		if (fr != FR_OK && fr != FR_EXIST) 
 			return E_ECREATE;
+		copy_attributes_and_datetime(hostPath, fatPath);
 		
 		DIR* dir = opendir(hostPath);
 		if (dir == nullptr) {
@@ -1664,61 +1753,42 @@ extern "C" {
 				}
 			} else 
 			{
-				auto srcFile = open_file_shared_read(srcFullPath.data());
-				if (!srcFile) {
-					// Cannot open source file
-					return E_EOPEN;
-				}
-				auto srcFileSize = get_file_size(srcFile);
-				if (whole_disk_t::pLocProcessData) {
-					// TODO: Second parameter is: "the number of bytes processed since the previous call to the function"...
-					auto res = whole_disk_t::pLocProcessData(srcFullPath.data(), static_cast<int>(srcFileSize));
-					if (res == 0)
-						return E_EABORTED;
-				}
-
-				FIL dstFile;
-				fr = f_open(&dstFile, dstFullPath.data(), FA_WRITE | FA_CREATE_ALWAYS);
-				if (fr != FR_OK) {
-					close_file(srcFile); // TODO: Test! 
-					return E_BAD_ARCHIVE;
-				}
-
-				std::unique_ptr<char[]> buffer{ new(nothrow) char[srcFileSize] };
-				if (!buffer) {
-					close_file(srcFile);
-					f_close(&dstFile);
-					return E_NO_MEMORY;
-				}
-
-				auto read_bytes = read_file(srcFile, buffer.get(), srcFileSize); // Read the whole file into memory
-				// TODO: check read_bytes == srcFileSize
-
-				UINT bytesWritten = 0;
-				fr = f_write(&dstFile, buffer.get(), static_cast<UINT>(read_bytes), &bytesWritten);
-				if (fr != FR_OK || bytesWritten != read_bytes) {
-					// Write error occurred
-					// f_unlink(dstFullPath.c_str());
-					close_file(srcFile);
-					f_close(&dstFile);
-					return E_EWRITE;
-				}
-
-				close_file(srcFile);
-				f_close(&dstFile);
+				auto res = copy_from_host_to_image(srcFullPath.data(), dstFullPath.data());
+				if (res != 0)
+					return res;
 			}
 		}
 		closedir(dir);
 		return overallResult;
 	}
 
-
+	// I'm just to lazy to fight initialization order
 	PARTITION VolToPart[] = {
-	{0, 1}, // partition 1 on drive 0
-	{0, 2}, // partition 2 on drive 0
-	{0, 3}, // partition 3 on drive 0
-	{0, 4}, // partition 4 on drive 0
-	{1, 0}
+		{0, 1},  // 'C' on drive 0,  
+		{0, 2},  // 'D' on drive 0,  
+		{0, 3},  // 'E' on drive 0,  
+		{0, 4},  // 'F' on drive 0,  
+		{0, 5},  // 'G' on drive 0,  
+		{0, 6},  // 'H' on drive 0,  
+		{0, 7},  // 'I' on drive 0,  
+		{0, 8},  // 'J' on drive 0,  
+		{0, 9},  // 'K' on drive 0,  
+		{0, 10}, // 'L' on drive 0,  
+		{0, 11}, // 'M' on drive 0,  
+		{0, 12}, // 'N' on drive 0,  
+		{0, 13}, // 'O' on drive 0,  
+		{0, 14}, // 'P' on drive 0,  
+		{0, 15}, // 'Q' on drive 0,  
+		{0, 16}, // 'R' on drive 0,  
+		{0, 17}, // 'S' on drive 0,  
+		{0, 18}, // 'T' on drive 0,  
+		{0, 19}, // 'U' on drive 0,  
+		{0, 20}, // 'V' on drive 0,  
+		{0, 21}, // 'W' on drive 0,  
+		{0, 22}, // 'X' on drive 0,  
+		{0, 23}, // 'Y' on drive 0,  
+		{0, 24}, // 'Z' on drive 0,  
+		{1, 0},  // Disk without partitions, SPD in FatFS terms
 	};
 
 	constexpr int floppy_vol_index = sizeof(VolToPart) / sizeof(PARTITION) - 1;
@@ -1762,9 +1832,6 @@ extern "C" {
     // PK_PACK_SAVE_PATHS         2 Save path names of files
 	// PK_PACK_ENCRYPT            4 Ask user for password, then encrypt file with that password
 
-	// TODO: Overwrite read-only files
-	// TODO: preserve file attributes
-	// TODO: preserve file date and time 
 	// TODO: Implement flags
 
 	//// write-mode functions
@@ -1852,54 +1919,9 @@ extern "C" {
 				continue;
 			}
 
-			auto srcFile = open_file_shared_read(srcFullPath.data());
-			if (!srcFile) {
-				// Cannot open source file
-				return E_EOPEN;
-			}
-			auto srcFileSize = get_file_size(srcFile);
-			if (whole_disk_t::pLocProcessData) {
-				// TODO: Second parameter is: "the number of bytes processed since the previous call to the function"...
-				auto res = whole_disk_t::pLocProcessData(srcFullPath.data(), static_cast<int>(srcFileSize));
-				if (res == 0)
-					return E_EABORTED;
-			}
-
-			FIL dstFile;
-			FRESULT fr = f_open(&dstFile, targetPath.data(), FA_WRITE | FA_CREATE_ALWAYS);
-			if (fr != FR_OK) {
-				close_file(srcFile);
-				return E_BAD_ARCHIVE;
-			}
-
-			std::unique_ptr<char[]> buffer{ new(nothrow) char[srcFileSize] };
-			if(!buffer) {
-				close_file(srcFile);
-				f_close(&dstFile);
-				return E_NO_MEMORY;
-			}
-
-			auto read_bytes = read_file(srcFile, buffer.get(), srcFileSize); // Read the whole file into memory
-			if (read_bytes != srcFileSize) {
-				plugin_config.log_print_dbg("Warning# in PackFiles, read_file failed, requested %d bytes, read %d.",
-					srcFileSize, read_bytes);
-				close_file(srcFile);
-				f_close(&dstFile);
-				return E_EREAD;
-			}
-
-			UINT bytesWritten = 0;
-			fr = f_write(&dstFile, buffer.get(), static_cast<UINT>(read_bytes), &bytesWritten);
-			if (fr != FR_OK || bytesWritten != read_bytes) {
-				plugin_config.log_print_dbg("Warning# in PackFiles, f_write failed, requested %d bytes, wrote %d.",
-					read_bytes, bytesWritten);
-				close_file(srcFile);
-				f_close(&dstFile);
-				return E_EWRITE;
-			}
-
-			close_file(srcFile);
-			f_close(&dstFile);
+			auto res = copy_from_host_to_image(srcFullPath.data(), targetPath.data());
+			if (res != 0)
+				return res;
 		}
 
 
@@ -2004,9 +2026,6 @@ extern "C" {
 			}
 			return f_unlink(path);
 			};
-
-
-		//implementing multiple files delete:
 
 		bool anyFailed = false;
 

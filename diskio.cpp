@@ -199,6 +199,7 @@ extern "C" {
         void* buff		/* Buffer to send/receive control data */
     )
     {
+        // Implement flush on CTRL_SYNC? 
         return RES_OK;
     }
 
@@ -213,6 +214,18 @@ extern "C" {
         }
         plugin_config.log_print_dbg("Warning# disk_deinitialize failed for: \'%s\'.", name_in);
         return RES_ERROR;
+    }
+
+
+    /*-------------------------------------------------------------------*/
+    /* User Provided RTC Function for FatFs module                       */
+    /*-------------------------------------------------------------------*/
+    /* This is a real time clock service to be called from FatFs module. */
+    /* This function is needed when FF_FS_READONLY == 0 and FF_FS_NORTC == 0 */
+
+    DWORD get_fattime(void)
+    {
+        return get_current_datatime_for_FatFS();
     }
 
 }

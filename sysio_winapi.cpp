@@ -117,6 +117,54 @@ bool set_file_datetime(file_handle_t handle, uint32_t file_datetime)
 	return true; // TODO: Add error handling
 }
 
+void SystemTimeToFatFs(const SYSTEMTIME& st, uint16_t* pdate, uint16_t* ptime) {
+	// FatFS time encoding: 
+	// Bits 15-11: hour (0–23)
+	// Bits 10-5 : minute (0–59)
+	// Bits 4-0  : second/2 (0–29)
+	*ptime = (WORD)((st.wHour << 11) | (st.wMinute << 5) | (st.wSecond / 2));
+
+	// FatFS date encoding:
+	// Bits 15-9: year from 1980 (0–127 for 1980–2107)
+	// Bits 8-5 : month (1–12)
+	// Bits 4-0 : day (1–31)
+	*pdate = (WORD)(((st.wYear - 1980) << 9) | (st.wMonth << 5) | st.wDay);
+}
+
+std::pair<uint16_t, uint16_t> get_file_datatime_for_FatFS(const char* filename) {
+	bool is_dir_v = is_dir(filename);
+	HANDLE handle = CreateFileA( filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 
+		is_dir_v ? FILE_FLAG_BACKUP_SEMANTICS : 0, NULL);
+
+	if (handle == INVALID_HANDLE_VALUE) {
+		return { -1, -1 };
+	}
+	FILETIME ftWrite;
+	if (!GetFileTime(handle, NULL, NULL, &ftWrite)) {
+		CloseHandle(handle);
+		return { -1, -1 };
+	}
+	SYSTEMTIME stUTC, stLocal;
+	FileTimeToSystemTime(&ftWrite, &stUTC);
+	SystemTimeToTzSpecificLocalTime(NULL, &stUTC, &stLocal); // Is it OK?
+
+	std::pair<uint16_t, uint16_t> res; 
+	SystemTimeToFatFs(stLocal, &res.first, &res.second);
+	CloseHandle(handle);
+	return res;
+}
+
+uint32_t get_current_datatime_for_FatFS() {
+	SYSTEMTIME tm, stLocal;
+
+	/* Get local time */
+	GetLocalTime(&tm); 
+	SystemTimeToTzSpecificLocalTime(NULL, &tm, &stLocal); // Is it OK?
+
+	/* Pack date and time into a DWORD variable */
+	return   (tm.wYear - 1980) << 25 | tm.wMonth << 21 | tm.wDay << 16 | tm.wHour << 11 | tm.wMinute << 5 | tm.wSecond >> 1;
+}
+
 bool set_file_attributes(const char* filename, uint32_t attribute){
 	return SetFileAttributes(filename, attribute);
 }
@@ -132,6 +180,22 @@ bool is_dir(const char* filename)
 	if (res == INVALID_FILE_ATTRIBUTES)
 		return false; // Is this enough?
 	return  res & FILE_ATTRIBUTE_DIRECTORY;
+}
+
+bool check_is_RO(uint32_t attr) {
+	return attr & FILE_ATTRIBUTE_READONLY;
+}
+
+bool check_is_Hidden(uint32_t attr) {
+	return attr & FILE_ATTRIBUTE_HIDDEN;
+}
+
+bool check_is_System(uint32_t attr) {
+	return attr & FILE_ATTRIBUTE_SYSTEM;
+}
+
+bool check_is_Archive(uint32_t attr) {
+	return attr & FILE_ATTRIBUTE_ARCHIVE;
 }
 
 size_t get_file_size(const char* filename)

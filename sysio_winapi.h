@@ -43,11 +43,18 @@ bool set_file_datetime(file_handle_t handle, uint32_t file_datetime);
 bool set_file_attributes(const char* filename, uint32_t attribute);
 uint32_t get_file_attributes(const char* filename);
 bool is_dir(const char* filename);
+// Those functions are not exceptionally necessary on Windows, but would be useful on other platforms
+bool check_is_RO(uint32_t attr);
+bool check_is_Hidden(uint32_t attr);
+bool check_is_System(uint32_t attr);
+bool check_is_Archive(uint32_t attr);
 size_t get_file_size(const char* filename);
 size_t get_file_size(file_handle_t handle);
 inline char get_path_separator() { return '\\'; }
 
 uint32_t get_current_datetime();
+std::pair<uint16_t, uint16_t> get_file_datatime_for_FatFS(const char* filename);
+uint32_t get_current_datatime_for_FatFS();
 
 //! Very basic, simplistic, function
 char simple_ucs16_to_local(wchar_t wc);
