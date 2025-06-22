@@ -1664,37 +1664,29 @@ extern "C" {
 					fr = f_open(&dstFile, dstFullPath.c_str(), FA_WRITE | FA_CREATE_ALWAYS);
 					if (fr != FR_OK) {
 						close_file(srcFile); // TODO: Test! 
-						// f_mount(nullptr, lv_drv_num.c_str(), 0);
-						// fclose(fp);
 						return E_BAD_ARCHIVE;
 					}
 
-					char* buffer = new char[srcFileSize];
+					std::unique_ptr<char[]> buffer{ new(nothrow) char[srcFileSize] };
 					if (!buffer) {
 						close_file(srcFile);
 						f_close(&dstFile);
-						// f_mount(nullptr, lv_drv_num.c_str(), 0);
-						// fclose(fp);
 						return E_NO_MEMORY;
 					}
 
-					auto read_bytes = read_file(srcFile, buffer, srcFileSize); // Read the whole file into memory
+					auto read_bytes = read_file(srcFile, buffer.get(), srcFileSize); // Read the whole file into memory
 					// TODO: check read_bytes == srcFileSize
 
 					UINT bytesWritten = 0;
-					fr = f_write(&dstFile, buffer, static_cast<UINT>(read_bytes), &bytesWritten);
+					fr = f_write(&dstFile, buffer.get(), static_cast<UINT>(read_bytes), &bytesWritten);
 					if (fr != FR_OK || bytesWritten != read_bytes) {
 						// Write error occurred
 						f_unlink(dstFullPath.c_str());
-						delete[] buffer;
 						close_file(srcFile);
 						f_close(&dstFile);
-						// f_mount(nullptr, lv_drv_num.c_str(), 0);
-						// fclose(fp);
 						return E_EWRITE;
 					}
 
-					delete[] buffer;
 					close_file(srcFile);
 					f_close(&dstFile);
 				}
@@ -1813,7 +1805,6 @@ extern "C" {
 		if (fatfs_RAII.get_error() != FR_OK) 
 			return E_UNKNOWN_FORMAT;
 		try {
-
 			for (char* current = AddList; current && *current != '\0'; current += std::strlen(current) + 1) {
 				std::string srcFullPath = std::string(SrcPath) + current;
 
@@ -1868,28 +1859,25 @@ extern "C" {
 					return E_BAD_ARCHIVE;
 				}
 
-				char* buffer = new char[srcFileSize];
+				std::unique_ptr<char[]> buffer{ new(nothrow) char[srcFileSize] };
 				if(!buffer) {
 					close_file(srcFile);
 					f_close(&dstFile);
 					return E_NO_MEMORY;
 				}
 
-				auto read_bytes = read_file(srcFile, buffer, srcFileSize); // Read the whole file into memory
+				auto read_bytes = read_file(srcFile, buffer.get(), srcFileSize); // Read the whole file into memory
 				// TODO: check read_bytes == srcFileSize
 
 				UINT bytesWritten = 0;
-				fr = f_write(&dstFile, buffer, static_cast<UINT>(read_bytes), &bytesWritten);
+				fr = f_write(&dstFile, buffer.get(), static_cast<UINT>(read_bytes), &bytesWritten);
 				if (fr != FR_OK || bytesWritten != read_bytes) {
 					// Write error occurred
-					delete[] buffer;
 					close_file(srcFile);
 					f_close(&dstFile);
 					return E_EWRITE;
 				}
-				bool errorOccurred = false;
 
-				delete[] buffer;
 				close_file(srcFile);
 				f_close(&dstFile);
 			}
