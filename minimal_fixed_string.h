@@ -100,6 +100,18 @@ public:
 		push_back(rhs);
 		return *this;
 	}
+
+	auto operator<=>(const minimal_fixed_string_t& rhs) const {
+		int cmp = std::memcmp(data(), rhs.data(), std::min(size(), rhs.size()));
+		if (cmp != 0)
+			return cmp <=> 0;
+		return size() <=> rhs.size();
+	}
+
+    bool operator==(const minimal_fixed_string_t& rhs) const {
+        if (size_m != rhs.size_m) return false;
+        return std::memcmp(data_m.data(), rhs.data_m.data(), size_m) == 0;
+    }
 }; 
 
 template<size_t N>

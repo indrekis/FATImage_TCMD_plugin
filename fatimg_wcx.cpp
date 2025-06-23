@@ -1716,62 +1716,6 @@ extern "C" {
 		return 0;
 	}
 	
-
-	int PackDirectory(const char* hostPath, const char* fatPath, bool delete_file_after) {
-		int overallResult = 0;
-
-		FRESULT fr = f_mkdir(fatPath);
-		if (fr != FR_OK && fr != FR_EXIST) 
-			return E_ECREATE;
-		copy_attributes_and_datetime(hostPath, fatPath);
-		
-		DIR* dir = opendir(hostPath);
-		if (dir == nullptr) {
-			auto lasterrno = errno; 
-			plugin_config.log_print_dbg("Warning# In PackDirectory with: hostPath=\'%s\'; "
-				"fatPath=\'%s\'; with errno = %d",
-				hostPath, fatPath, lasterrno
-			);
-			return E_EREAD;
-		}
-		for (dirent* entry = readdir(dir); entry != nullptr; entry = readdir(dir)) {
-			if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-				continue;
-			minimal_fixed_string_t<MAX_PATH> srcFullPath{ hostPath };
-			srcFullPath += "\\";
-			srcFullPath += entry->d_name;
-			minimal_fixed_string_t<MAX_PATH> dstFullPath{ fatPath };
-			if(dstFullPath.back() != '\'')
-				dstFullPath += "\\";
-			dstFullPath += entry->d_name;
-			
-			if (is_dir(srcFullPath.data())) {
-				int res = PackDirectory(srcFullPath.data(), dstFullPath.data(), delete_file_after);
-				if (res != 0) {
-					overallResult = res;
-					continue;
-				} 
-				if (delete_file_after) {
-					auto res2 = delete_dir(srcFullPath.data());
-					if (!res2)
-						return E_NOT_SUPPORTED; // Which error would be best here?
-				}
-			} else 
-			{
-				auto res = copy_from_host_to_image(srcFullPath.data(), dstFullPath.data());
-				if (res != 0)
-					return res;
-				if (delete_file_after) {
-					auto res2 = delete_file(srcFullPath.data());
-					if (!res2)
-						return E_NOT_SUPPORTED; // Which error would be best here?
-				}
-			}
-		}
-		closedir(dir);
-		return overallResult;
-	}
-
 	// I'm just to lazy to fight initialization order
 	PARTITION VolToPart[] = {
 		{0, 1},  // 'C' on drive 0,  
@@ -1903,6 +1847,8 @@ extern "C" {
 		if (fatfs_RAII.get_error() != FR_OK) 
 			return E_UNKNOWN_FORMAT;
 
+		std::vector<minimal_fixed_string_t<MAX_PATH>> dirs_to_delete;
+
 		for (const char* current = AddList; current && *current != '\0'; current += std::strlen(current) + 1) {
 			minimal_fixed_string_t<MAX_PATH> srcFullPath{ SrcPath ? SrcPath : "" };
 			srcFullPath += current;
@@ -1921,29 +1867,37 @@ extern "C" {
 			if ( is_dir(srcFullPath.data()) ) {  // If it's a dir
 				// Create a dir in FAT img
 
-				int res = PackDirectory(srcFullPath.data(), targetPath.data(), Flags & PK_PACK_MOVE_FILES );
-				if (res != 0) {
-					// Directory packing failed
-					return res;
-				}
+				FRESULT fr = f_mkdir(targetPath.data());
+				if (fr != FR_OK && fr != FR_EXIST)
+					return E_ECREATE;
+				copy_attributes_and_datetime(srcFullPath.data(), targetPath.data());				
 				if (Flags & PK_PACK_MOVE_FILES) {
-					auto res2 = delete_dir(srcFullPath.data());
+					dirs_to_delete.push_back(srcFullPath);
+				}
+			}
+			else {
+				auto res = copy_from_host_to_image(srcFullPath.data(), targetPath.data());
+				if (res != 0)
+					return res;
+				if (Flags & PK_PACK_MOVE_FILES) {
+					auto res2 = delete_file(srcFullPath.data());
 					if (!res2)
 						return E_NOT_SUPPORTED; // Which error would be best here?
 				}
-				continue;
 			}
+		}
 
-			auto res = copy_from_host_to_image(srcFullPath.data(), targetPath.data());
-			if (res != 0)
-				return res;
-			if (Flags & PK_PACK_MOVE_FILES) {
-				auto res2 = delete_file(srcFullPath.data());
+		if (Flags & PK_PACK_MOVE_FILES) {
+			std::sort(dirs_to_delete.begin(), dirs_to_delete.end(),
+				[](const minimal_fixed_string_t<MAX_PATH>& a, const minimal_fixed_string_t<MAX_PATH>& b) {
+					return a > b;
+				});
+			for (auto& cdir : dirs_to_delete) {
+				auto res2 = delete_dir(cdir.data());
 				if (!res2)
 					return E_NOT_SUPPORTED; // Which error would be best here?
 			}
 		}
-
 
 		return 0;
 	}
