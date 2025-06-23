@@ -44,6 +44,10 @@
 #include <FL/fl_ask.H>
 #include <FL/names.h>  // for fl_xid?
 #include <FL/x.H>	   // for fl_xid
+#include <FL/Fl_Round_Button.H>
+#include <FL/Fl_Spinner.H>
+#include <FL/Fl_Input.H>
+#include <FL/Fl_Group.H>
 #endif
 
 extern "C" {
@@ -2091,23 +2095,227 @@ extern "C" {
 
 	}
 
-
+#if 1
 	// Global or static variable to store selected size
 	static std::string selectedSize = "1.44 MB";
 
-	static void on_ok(Fl_Widget* w, void* data) {
+	static void on_ok1(Fl_Widget* w, void* data) {
 		Fl_Choice* choice = (Fl_Choice*)data;
 		selectedSize = choice->text();
 		w->window()->hide();
 	}
 
-	static void on_cancel(Fl_Widget* w, void*) {
+	static void on_cancel1(Fl_Widget* w, void*) {
 		selectedSize = ""; // cancel
 		w->window()->hide();
 	}
+#endif 
 
 #ifdef FLTK_ENABLED_EXPERIMENTAL
+	struct new_disk_config_t {
+		static const char* unit_labels[6];
+		enum disk_structure { SINGLE_PARTITION, MULTI_PARTITION };
+
+		bool single_part;
+		disk_structure structure;
+		int custom_unit;   // 0 = bytes, 1 = 512b sectors, etc.
+		size_t custom_value;
+		std::vector<size_t> multi_values;
+		std::vector<int> multi_units;
+		int total_unit;
+		size_t total_value;
+		bool result_confirmed = false;
+
+		Fl_Group* fl_single_group = nullptr;
+		Fl_Group* fl_multi_group = nullptr;
+		Fl_Round_Button* fl_rb_single = nullptr;
+		Fl_Choice* fl_choise_single_size = nullptr;
+		Fl_Spinner* fl_custom_val = nullptr;
+		Fl_Choice* fl_custom_unit_choice = nullptr;
+		Fl_Spinner* fl_total_value = nullptr;
+		Fl_Choice* fl_total_unit = nullptr;
+		static const int max_partitions = 4;
+		Fl_Spinner* fl_multi_value[max_partitions];
+		Fl_Choice* fl_multi_unit_choice[max_partitions];
+	} new_disk_config;
+
+	const char* new_disk_config_t::unit_labels[6] = { "Bytes", "512b Sectors", "KB", "4KB Blocks", "MB", nullptr };
+
+	size_t unit_factor(int unit) {
+		switch (unit) {
+		case 0: return 1;
+		case 1: return 512;
+		case 2: return 1024;
+		case 3: return 4096;
+		case 4: return 1024 * 1024;
+		default: return 1;
+		}
+	}
+
+	void update_total_size(Fl_Widget*, void* data) {
+		auto conf = static_cast<new_disk_config_t*>(data);
+		size_t sum_bytes = 0;
+		for (int i = 0; i < 5; ++i) {
+			size_t val = static_cast<size_t>(conf->fl_multi_value[i]->value());
+			int unit = conf->fl_multi_unit_choice[i]->value();
+			sum_bytes += val * unit_factor(unit);
+		}
+
+		int target_unit = conf->fl_total_unit->value();
+		size_t converted = sum_bytes / unit_factor(target_unit);
+		conf->fl_total_value->value(converted);
+	}
+
+	void on_select_mode(Fl_Widget* w, void* data) {
+		auto conf = static_cast<new_disk_config_t*>(data);
+		if (w == conf->fl_rb_single) {
+			conf->fl_single_group->show();
+			conf->fl_multi_group->hide();
+		}
+		else {
+			conf->fl_single_group->hide();
+			conf->fl_multi_group->show();
+			update_total_size(nullptr, data);
+		}
+		Fl::first_window()->redraw();
+	}
+
+	void on_ok(Fl_Widget*, void* data) {
+		auto conf = static_cast<new_disk_config_t*>(data);
+		conf->single_part = conf->fl_rb_single->value();
+
+		if (conf->single_part) {
+			const char* label = conf->fl_choise_single_size->text();
+			if (strcmp(label, "Custom") == 0) {
+				conf->custom_value = static_cast<size_t>(conf->fl_custom_val->value());
+				conf->custom_unit = conf->fl_custom_unit_choice->value();
+				if (conf->custom_value == 0) {
+					fl_alert("Custom size must be greater than 0.");
+					return;
+				}
+			}
+			else {
+				conf->custom_value = atoi(label);
+				conf->custom_unit = 2; // KB
+			}
+		}
+		else {
+			conf->multi_values.clear();
+			conf->multi_units.clear();
+
+			size_t sum = 0;
+			for (int i = 0; i < 5; ++i) {
+				size_t val = static_cast<size_t>(conf->fl_multi_value[i]->value());
+				int unit = conf->fl_multi_unit_choice[i]->value();
+				conf->multi_values.push_back(val);
+				conf->multi_units.push_back(unit);
+				sum += val * unit_factor(unit);
+			}
+
+			conf->total_value = static_cast<size_t>(conf->fl_total_value->value());
+			conf->total_unit = conf->fl_total_unit->value();
+
+			size_t total_bytes = conf->total_value * unit_factor(conf->total_unit);
+
+			if (sum > total_bytes) {
+				fl_alert("Sum of partition sizes exceeds total disk size.");
+				return;
+			}
+		}
+
+		conf->result_confirmed = true;
+		Fl::first_window()->hide();
+	}
+
+	void on_cancel(Fl_Widget* w, void* data) {
+		auto conf = static_cast<new_disk_config_t*>(data);
+		conf->result_confirmed = false;
+		w->window()->hide();
+	}
+
+
 	DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
+		Fl_Window* win = new Fl_Window(420, 420, "Disk Image Configuration");
+
+		new_disk_config.fl_rb_single = new Fl_Round_Button(20, 20, 180, 20, "Single partition");
+		new_disk_config.fl_rb_single->type(FL_RADIO_BUTTON);
+		new_disk_config.fl_rb_single->value(1);
+		new_disk_config.fl_rb_single->callback(on_select_mode, &new_disk_config);
+		// new_disk_config.fl_rb_single->user_data((void*)1);
+
+		Fl_Round_Button* rb_multi = new Fl_Round_Button(220, 20, 180, 20, "Multiple partitions");
+		rb_multi->type(FL_RADIO_BUTTON);
+		rb_multi->callback(on_select_mode, &new_disk_config);
+		// rb_multi->user_data((void*)0);
+
+		new_disk_config.fl_single_group = new Fl_Group(20, 50, 380, 120);
+		new_disk_config.fl_single_group->begin();
+		new_disk_config.fl_choise_single_size = new Fl_Choice(150, 60, 180, 25, "Disk size:");
+		const char* sizes[] = { "160", "180", "320", "360", "720", "1200", "1440", "2880", "Custom" };
+		for (const char* size : sizes) new_disk_config.fl_choise_single_size->add(size);
+		new_disk_config.fl_choise_single_size->value(6);
+
+		new_disk_config.fl_custom_val = new Fl_Spinner(150, 95, 80, 25, "Size:");
+		new_disk_config.fl_custom_val->range(1, 2 * 1024 * 1024 - 1);
+		new_disk_config.fl_custom_val->value(1440);
+
+		new_disk_config.fl_custom_unit_choice = new Fl_Choice(250, 95, 100, 25);
+		for (int i = 0; new_disk_config_t::unit_labels[i]; ++i)
+			new_disk_config.fl_custom_unit_choice->add(new_disk_config_t::unit_labels[i]);
+		new_disk_config.fl_custom_unit_choice->value(2);
+
+		new_disk_config.fl_single_group->end();
+
+		new_disk_config.fl_multi_group = new Fl_Group(20, 50, 380, 200);
+		int y_coord = new_disk_config.fl_multi_group->y();
+		new_disk_config.fl_multi_group->begin();
+		for (int i = 0; i < new_disk_config.max_partitions; ++i) {
+			y_coord += 30;
+			char label[16]; sprintf(label, "Partition %d:", i + 1);
+			new Fl_Box(FL_NO_BOX, 10, y_coord, 80, 25, label);
+
+			new_disk_config.fl_multi_value[i] = new Fl_Spinner(100, y_coord, 60, 25);
+			new_disk_config.fl_multi_value[i]->range(0, 2*1024*1024-1);
+			new_disk_config.fl_multi_value[i]->value(1024);
+
+			new_disk_config.fl_multi_unit_choice[i] = new Fl_Choice(170, y_coord, 100, 25);
+			for (int j = 0; new_disk_config_t::unit_labels[j]; ++j)
+				new_disk_config.fl_multi_unit_choice[i]->add(new_disk_config_t::unit_labels[j]);
+			new_disk_config.fl_multi_unit_choice[i]->value(2);
+		}
+		y_coord += 30;
+		new Fl_Box(FL_NO_BOX, 10, y_coord, 80, 25, "Total size:");
+		new_disk_config.fl_total_value = new Fl_Spinner(100, y_coord, 60, 25);
+		new_disk_config.fl_total_value->range(0, 2 * 1024 * 1024 - 1);
+		new_disk_config.fl_total_value->value(1440);
+
+		new_disk_config.fl_total_unit = new Fl_Choice(170, y_coord, 100, 25);
+		for (int j = 0; new_disk_config_t::unit_labels[j]; ++j)
+			new_disk_config.fl_total_unit->add(new_disk_config_t::unit_labels[j]);
+		new_disk_config.fl_total_unit->value(2);
+
+		new_disk_config.fl_multi_group->end();
+		new_disk_config.fl_multi_group->hide();
+
+		Fl_Button* ok = new Fl_Button(80, 380, 100, 30, "OK");
+		ok->callback(on_ok, &new_disk_config);
+
+		Fl_Button* cancel = new Fl_Button(220, 380, 100, 30, "Cancel");
+		cancel->callback(on_cancel, &new_disk_config);
+
+		win->end();
+		win->set_modal();
+		win->show();
+		Fl::check();  // Process one round of events to ensure window is created
+		HWND hWnd = (HWND)fl_xid(win);
+		SetWindowLongPtr(hWnd, GWLP_HWNDPARENT, (LONG_PTR)Parent);
+
+		while (win->shown()) { Fl::wait(); } // Better then Fl::run() for plugins -- allows reload
+
+		delete win;
+		// new_disk_config.result_confirmed ? 0 : 1
+		return ;
+#if 0
 		Fl_Window* win = new Fl_Window(300, 140, "Select Disk Image Size");
 
 		Fl_Choice* choice = new Fl_Choice(100, 30, 150, 25, "Size:");
@@ -2130,29 +2338,9 @@ extern "C" {
 		win->show();
 		Fl::check();  // Process one round of events to ensure window is created
 
-/*
-Idea: FLTK windows as children of system windows: "replaces WS_POPUP with WS_CHILD flags" from:
-https://fltk.easysw.narkive.com/FJwMvdmO/windows-as-children-of-system-windows
-
-https://www.fltk.org/doc-1.3/osissues.html#osissues_win32
-See also "Handling Other WIN32 Messages"
-And Fl_Window* fl_find(HWND xid)
-*/
 		HWND hWnd = (HWND)fl_xid(win);
-#if 0
-		LONG_PTR prev_st = GetWindowLongPtr(hWnd, GWL_STYLE);
-		prev_st &= ~WS_POPUP;
-		prev_st |= WS_OVERLAPPEDWINDOW;
-		auto res = SetWindowLongPtr(hWnd, GWL_STYLE, prev_st);
-#endif
 		SetWindowLongPtr(hWnd, GWLP_HWNDPARENT, (LONG_PTR)Parent);
-
-		//SetWindowLongPtr(hWnd, GWL_STYLE, (GetWindowLongPtr(hWnd, GWL_STYLE) & ~WS_POPUP) | WS_OVERLAPPED);
-		// SetWindowLongPtr(hWnd, GWL_STYLE, (GetWindowLongPtr(hWnd, GWL_STYLE) & ~WS_POPUP) | WS_CHILD);
-		// SetParent(hWnd, Parent);
-		// BringWindowToTop(hWnd);
-
-		Fl::run();
+		while (win->shown()) { Fl::wait(); } // Better then Fl::run() for plugins
 
 		// After dialog closes:
 		if (!selectedSize.empty()) {
@@ -2162,7 +2350,12 @@ And Fl_Window* fl_find(HWND xid)
 		else {
 			// Cancelled
 		}
+#endif 
 	};
 #endif 
 
 }
+
+//! Notes:
+// Debug notes: To unload plugins -- send message cm_UnloadPlugins, added corresponding button.
+// Do not use Fl::run() -- it almost precludes reloading the plugin which uses FLTK.
