@@ -1781,11 +1781,7 @@ extern "C" {
 		}
 	};
 
-	// TODO: Implement flags
-	// PK_PACK_MOVE_FILES         1 Delete original after packing
-	// PK_PACK_SAVE_PATHS         2 Save path names of files
-
-	//// write-mode functions
+	// TODO: if PK_PACK_SAVE_PATHS, silently overrides duplicated files -- fix
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
 
 		//! TODO: currently prints only the first file in AddList, not all of them.
@@ -1797,6 +1793,8 @@ extern "C" {
 			plugin_config.log_print_dbg("Warning# Plugin does not supports encryption.");
 		}
 		
+		bool savePaths = (Flags & PK_PACK_SAVE_PATHS);
+
 		bool have_many_partitions;
 		{
 			size_t image_file_size = get_file_size(PackedFile);
@@ -1849,33 +1847,41 @@ extern "C" {
 
 		std::vector<minimal_fixed_string_t<MAX_PATH>> dirs_to_delete;
 
+		minimal_fixed_string_t<MAX_PATH> arc_base_path{ fatfs_RAII.get_disk() };
+		arc_base_path += "\\";
+		if (SubPath && std::strlen(SubPath) > 0) {
+			arc_base_path += SubPath;
+			arc_base_path += "\\";
+		}
+		if (have_many_partitions) {
+			arc_base_path.erase(2, 2); // Erase disk letter
+		}
+
 		for (const char* current = AddList; current && *current != '\0'; current += std::strlen(current) + 1) {
 			minimal_fixed_string_t<MAX_PATH> srcFullPath{ SrcPath ? SrcPath : "" };
 			srcFullPath += current;
 
-			minimal_fixed_string_t<MAX_PATH> targetPath{ fatfs_RAII.get_disk() };
-			targetPath += "\\";
-			if (SubPath && std::strlen(SubPath) > 0) {
-				targetPath += SubPath;
-				targetPath += "\\";
-			}
+			minimal_fixed_string_t<MAX_PATH> targetPath{ arc_base_path };
 			targetPath += current;
-			if (have_many_partitions) {
-				targetPath.erase(2, 2); // Erase disk letter
-			}
 
 			if ( is_dir(srcFullPath.data()) ) {  // If it's a dir
 				// Create a dir in FAT img
 
-				FRESULT fr = f_mkdir(targetPath.data());
-				if (fr != FR_OK && fr != FR_EXIST)
-					return E_ECREATE;
-				copy_attributes_and_datetime(srcFullPath.data(), targetPath.data());				
-				if (Flags & PK_PACK_MOVE_FILES) {
-					dirs_to_delete.push_back(srcFullPath);
+				if (savePaths) {
+					FRESULT fr = f_mkdir(targetPath.data());
+					if (fr != FR_OK && fr != FR_EXIST)
+						return E_ECREATE;
+					copy_attributes_and_datetime(srcFullPath.data(), targetPath.data());
+					if (Flags & PK_PACK_MOVE_FILES) {
+						dirs_to_delete.push_back(srcFullPath);
+					}
 				}
 			}
 			else {
+				if (!savePaths) {
+					targetPath.erase(0, targetPath.find_last('\\'));
+					targetPath = arc_base_path + targetPath;
+				}
 				auto res = copy_from_host_to_image(srcFullPath.data(), targetPath.data());
 				if (res != 0)
 					return res;
