@@ -38,8 +38,12 @@
 #ifdef FLTK_ENABLED_EXPERIMENTAL
 #include <FL/Fl.H>
 #include <FL/Fl_Window.H>
+#include <FL/Fl_Choice.H>
 #include <FL/Fl_Box.H>
+#include <FL/Fl_Button.H>
 #include <FL/fl_ask.H>
+#include <FL/names.h>  // for fl_xid?
+#include <FL/x.H>	   // for fl_xid
 #endif
 
 extern "C" {
@@ -2087,44 +2091,78 @@ extern "C" {
 
 	}
 
-	//DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
-	//	std::string log_path = "E:\\log_file.txt";
 
+	// Global or static variable to store selected size
+	static std::string selectedSize = "1.44 MB";
 
-	//	std::FILE* cf = std::fopen(log_path.data(), "a");
+	static void on_ok(Fl_Widget* w, void* data) {
+		Fl_Choice* choice = (Fl_Choice*)data;
+		selectedSize = choice->text();
+		w->window()->hide();
+	}
 
-	//	//std::ofstream cf{ config_file_path.data() };
-	//	fprintf(cf, "[FAT_disk_img_plugin]\n");
-	//	fprintf(cf, "[ConfigurePacker] Called with :\n  PackedFile : \n  DeleteList :\n  Returning : E_NOT_SUPPORTED\n");
-	//	std::fclose(cf);
-	//};
+	static void on_cancel(Fl_Widget* w, void*) {
+		selectedSize = ""; // cancel
+		w->window()->hide();
+	}
 
-}
+#ifdef FLTK_ENABLED_EXPERIMENTAL
+	DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
+		Fl_Window* win = new Fl_Window(300, 140, "Select Disk Image Size");
 
-#if 0 // FLTK Dialogs:
-Fl_Window* w = new Fl_Window(400, 300);
-w->set_modal();
-w->show();
-while (w->shown()) Fl::wait();
+		Fl_Choice* choice = new Fl_Choice(100, 30, 150, 25, "Size:");
+		choice->add("360 KB");
+		choice->add("720 KB");
+		choice->add("1.44 MB");
+		choice->add("2.88 MB");
+		choice->add("Custom");
 
-https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setparent -- 
-Changes the parent window of the specified child window.
-HWND SetParent(
-	[in]           HWND hWndChild,
-	[in, optional] HWND hWndNewParent
-);
+		choice->value(2); // default to 1.44 MB
 
+		Fl_Button* ok = new Fl_Button(60, 80, 80, 30, "OK");
+		ok->callback(on_ok, choice);
 
-FLTK windows as children of system windows: "replaces WS_POPUP with WS_CHILD flags"
-https ://fltk.easysw.narkive.com/FJwMvdmO/windows-as-children-of-system-windows
-	HWND hWnd = (HWND)fl_xid(dlgWnd_);
-SetWindowLong(hWnd, GWL_STYLE, (GetWindowLong(hWnd, GWL_STYLE) & ~WS_POPUP) | WS_CHILD);
-SetParent(hWnd, parentWindow);
+		Fl_Button* cancel = new Fl_Button(160, 80, 80, 30, "Cancel");
+		cancel->callback(on_cancel);
+
+		win->end();
+		// win->set_modal();
+		win->show();
+		Fl::check();  // Process one round of events to ensure window is created
+
+/*
+Idea: FLTK windows as children of system windows: "replaces WS_POPUP with WS_CHILD flags" from:
+https://fltk.easysw.narkive.com/FJwMvdmO/windows-as-children-of-system-windows
 
 https://www.fltk.org/doc-1.3/osissues.html#osissues_win32
-See "Handling Other WIN32 Messages"
-
-Fl_Window* fl_find(HWND xid)
-Returns the Fl_Window that corresponds to the given window handle, or NULL if not found.
-This function uses a cache so it is slightly faster than iterating through the windows yourself.
+See also "Handling Other WIN32 Messages"
+And Fl_Window* fl_find(HWND xid)
+*/
+		HWND hWnd = (HWND)fl_xid(win);
+#if 0
+		LONG_PTR prev_st = GetWindowLongPtr(hWnd, GWL_STYLE);
+		prev_st &= ~WS_POPUP;
+		prev_st |= WS_OVERLAPPEDWINDOW;
+		auto res = SetWindowLongPtr(hWnd, GWL_STYLE, prev_st);
 #endif
+		SetWindowLongPtr(hWnd, GWLP_HWNDPARENT, (LONG_PTR)Parent);
+
+		//SetWindowLongPtr(hWnd, GWL_STYLE, (GetWindowLongPtr(hWnd, GWL_STYLE) & ~WS_POPUP) | WS_OVERLAPPED);
+		// SetWindowLongPtr(hWnd, GWL_STYLE, (GetWindowLongPtr(hWnd, GWL_STYLE) & ~WS_POPUP) | WS_CHILD);
+		// SetParent(hWnd, Parent);
+		// BringWindowToTop(hWnd);
+
+		Fl::run();
+
+		// After dialog closes:
+		if (!selectedSize.empty()) {
+			// Store it to config or global variable
+			printf("Selected size: %s\n", selectedSize.c_str());
+		}
+		else {
+			// Cancelled
+		}
+	};
+#endif 
+
+}
