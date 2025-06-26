@@ -27,6 +27,8 @@
 #include <algorithm>
 #include <optional>
 #include <map>
+#include <mutex>
+#include <atomic>
 #include <cassert>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -2077,8 +2079,6 @@ extern "C" {
 				fr = f_unlink(deletePath.data()); // unlink the file
 			}
 
-
-
 			if (fr != FR_OK) {
 				// Log failure and return an error code
 				plugin_config.log_print_dbg("Warning# Failed to delete: \'%s\'", deletePath.data());
@@ -2095,35 +2095,25 @@ extern "C" {
 
 	}
 
-#if 1
-	// Global or static variable to store selected size
-	static std::string selectedSize = "1.44 MB";
-
-	static void on_ok1(Fl_Widget* w, void* data) {
-		Fl_Choice* choice = (Fl_Choice*)data;
-		selectedSize = choice->text();
-		w->window()->hide();
-	}
-
-	static void on_cancel1(Fl_Widget* w, void*) {
-		selectedSize = ""; // cancel
-		w->window()->hide();
-	}
-#endif 
-
 #ifdef FLTK_ENABLED_EXPERIMENTAL
 	struct new_disk_config_t {
-		static const char* unit_labels[6];
-		enum disk_structure { SINGLE_PARTITION, MULTI_PARTITION };
+		static const int unit_labels_n = 5;
+		static const char* unit_labels[unit_labels_n];
+		static size_t      unit_sizes_b[unit_labels_n];
+		enum unit_ids { unit_b, unit_sec, unit_kb, unit_4kb, unit_mb };
+		static const int fdd_sizes_n = 9;
+		static const char* fdd_sizes_str[fdd_sizes_n];
+		static size_t      fdd_sizes_b[fdd_sizes_n];
 
-		bool single_part;
-		disk_structure structure;
-		int custom_unit;   // 0 = bytes, 1 = 512b sectors, etc.
-		size_t custom_value;
+		bool single_part = true;
+		int custom_unit = unit_kb;   
+		size_t custom_value = 0;
 		std::vector<size_t> multi_values;
 		std::vector<int> multi_units;
-		int total_unit;
-		size_t total_value;
+		std::vector<int> multi_fs;
+		int single_fs = 0;
+		int    total_unit = -1;
+		size_t total_value = -1;
 		bool result_confirmed = false;
 
 		Fl_Group* fl_single_group = nullptr;
@@ -2135,35 +2125,52 @@ extern "C" {
 		Fl_Spinner* fl_total_value = nullptr;
 		Fl_Choice* fl_total_unit = nullptr;
 		static const int max_partitions = 4;
-		Fl_Spinner* fl_multi_value[max_partitions];
-		Fl_Choice* fl_multi_unit_choice[max_partitions];
+		Fl_Spinner* fl_multi_value[max_partitions] = { nullptr };
+		Fl_Choice* fl_multi_unit_choice[max_partitions] = { nullptr };
+		Fl_Choice* fl_multi_fs_choice[max_partitions] = { nullptr };
+		Fl_Choice* fl_single_fs_choice = nullptr;
+
+		std::mutex inuse;
+
+		static size_t unit_factor(int unit) {
+			return unit_sizes_b[unit];
+		}
 	} new_disk_config;
 
-	const char* new_disk_config_t::unit_labels[6] = { "Bytes", "512b Sectors", "KB", "4KB Blocks", "MB", nullptr };
+	const char* new_disk_config_t::unit_labels[unit_labels_n] = { "Bytes", "512b Sectors", "Kb",    "4Kb Blocks", "Mb" };
+	size_t new_disk_config_t::unit_sizes_b[unit_labels_n] = { 1,       512,            1024,    4 * 1024,       1024 * 1024 };
+	const char* new_disk_config_t::fdd_sizes_str[fdd_sizes_n] = { "160", "180", "320", "360", "720", "1200", "1440", "2880", "Custom" };
+	size_t      new_disk_config_t::fdd_sizes_b[fdd_sizes_n] = { 160 * 1024, 180 * 1024, 320 * 1024, 360 * 1024, 720 * 1024, 1200 * 1024, 1440 * 1024, 2880 * 1024, 0 };
 
-	size_t unit_factor(int unit) {
-		switch (unit) {
-		case 0: return 1;
-		case 1: return 512;
-		case 2: return 1024;
-		case 3: return 4096;
-		case 4: return 1024 * 1024;
-		default: return 1;
-		}
-	}
+
 
 	void update_total_size(Fl_Widget*, void* data) {
 		auto conf = static_cast<new_disk_config_t*>(data);
 		size_t sum_bytes = 0;
-		for (int i = 0; i < 5; ++i) {
+		for (int i = 0; i < conf->max_partitions; ++i) {
 			size_t val = static_cast<size_t>(conf->fl_multi_value[i]->value());
 			int unit = conf->fl_multi_unit_choice[i]->value();
-			sum_bytes += val * unit_factor(unit);
+			sum_bytes += val * new_disk_config_t::unit_factor(unit);
 		}
 
 		int target_unit = conf->fl_total_unit->value();
-		size_t converted = sum_bytes / unit_factor(target_unit);
-		conf->fl_total_value->value(converted);
+		size_t converted = sum_bytes / new_disk_config_t::unit_factor(target_unit);
+		conf->fl_total_value->value(static_cast<double>(converted));
+	}
+
+	void update_custom_visibility(Fl_Widget* w, void* data) {
+		auto conf = static_cast<new_disk_config_t*>(data);
+		const char* label = conf->fl_choise_single_size->text();
+		bool custom = (strcmp(label, "Custom") == 0);
+		if (custom) {
+			conf->fl_custom_val->show();
+			conf->fl_custom_unit_choice->show();
+		}
+		else {
+			conf->fl_custom_val->hide();
+			conf->fl_custom_unit_choice->hide();
+		}
+		Fl::first_window()->redraw();
 	}
 
 	void on_select_mode(Fl_Widget* w, void* data) {
@@ -2182,6 +2189,9 @@ extern "C" {
 
 	void on_ok(Fl_Widget*, void* data) {
 		auto conf = static_cast<new_disk_config_t*>(data);
+
+		std::lock_guard<std::mutex> lg{ conf->inuse };
+
 		conf->single_part = conf->fl_rb_single->value();
 
 		if (conf->single_part) {
@@ -2189,7 +2199,7 @@ extern "C" {
 			if (strcmp(label, "Custom") == 0) {
 				conf->custom_value = static_cast<size_t>(conf->fl_custom_val->value());
 				conf->custom_unit = conf->fl_custom_unit_choice->value();
-				if (conf->custom_value == 0) {
+				if (conf->custom_value == 0) { //-V1051
 					fl_alert("Custom size must be greater than 0.");
 					return;
 				}
@@ -2198,24 +2208,26 @@ extern "C" {
 				conf->custom_value = atoi(label);
 				conf->custom_unit = 2; // KB
 			}
+			conf->single_fs = conf->fl_single_fs_choice->value();
 		}
 		else {
 			conf->multi_values.clear();
 			conf->multi_units.clear();
 
 			size_t sum = 0;
-			for (int i = 0; i < 5; ++i) {
+			for (int i = 0; i < conf->max_partitions; ++i) {
 				size_t val = static_cast<size_t>(conf->fl_multi_value[i]->value());
 				int unit = conf->fl_multi_unit_choice[i]->value();
 				conf->multi_values.push_back(val);
 				conf->multi_units.push_back(unit);
-				sum += val * unit_factor(unit);
+				conf->multi_fs.push_back(conf->fl_multi_fs_choice[i]->value());
+				sum += val * new_disk_config_t::unit_factor(unit);
 			}
 
 			conf->total_value = static_cast<size_t>(conf->fl_total_value->value());
 			conf->total_unit = conf->fl_total_unit->value();
 
-			size_t total_bytes = conf->total_value * unit_factor(conf->total_unit);
+			size_t total_bytes = conf->total_value * new_disk_config_t::unit_factor(conf->total_unit);
 
 			if (sum > total_bytes) {
 				fl_alert("Sum of partition sizes exceeds total disk size.");
@@ -2224,6 +2236,7 @@ extern "C" {
 		}
 
 		conf->result_confirmed = true;
+
 		Fl::first_window()->hide();
 	}
 
@@ -2235,64 +2248,85 @@ extern "C" {
 
 
 	DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
-		Fl_Window* win = new Fl_Window(420, 420, "Disk Image Configuration");
+		Fl_Window* win = new Fl_Window(460, 480, "Disk Image Configuration");
 
 		new_disk_config.fl_rb_single = new Fl_Round_Button(20, 20, 180, 20, "Single partition");
 		new_disk_config.fl_rb_single->type(FL_RADIO_BUTTON);
 		new_disk_config.fl_rb_single->value(1);
 		new_disk_config.fl_rb_single->callback(on_select_mode, &new_disk_config);
-		// new_disk_config.fl_rb_single->user_data((void*)1);
 
 		Fl_Round_Button* rb_multi = new Fl_Round_Button(220, 20, 180, 20, "Multiple partitions");
 		rb_multi->type(FL_RADIO_BUTTON);
 		rb_multi->callback(on_select_mode, &new_disk_config);
-		// rb_multi->user_data((void*)0);
+		// new_disk_config.fl_single_group = new Fl_Group(20, 50, 380, 120);
+		new_disk_config.fl_single_group = new Fl_Group(20, 70, 420, 120, "Single Partition Settings");
+		new_disk_config.fl_single_group->box(FL_ENGRAVED_FRAME);
 
-		new_disk_config.fl_single_group = new Fl_Group(20, 50, 380, 120);
 		new_disk_config.fl_single_group->begin();
-		new_disk_config.fl_choise_single_size = new Fl_Choice(150, 60, 180, 25, "Disk size:");
-		const char* sizes[] = { "160", "180", "320", "360", "720", "1200", "1440", "2880", "Custom" };
-		for (const char* size : sizes) new_disk_config.fl_choise_single_size->add(size);
+		new_disk_config.fl_choise_single_size = new Fl_Choice(150, new_disk_config.fl_single_group->y() + 10, 180, 25, "Disk size:");
+		for (const char* size : new_disk_config.fdd_sizes_str) 
+			new_disk_config.fl_choise_single_size->add(size);
 		new_disk_config.fl_choise_single_size->value(6);
+		new_disk_config.fl_choise_single_size->callback(update_custom_visibility, &new_disk_config);
 
-		new_disk_config.fl_custom_val = new Fl_Spinner(150, 95, 80, 25, "Size:");
+		new_disk_config.fl_custom_val = new Fl_Spinner(150, new_disk_config.fl_single_group->y() + 40, 80, 25, "Size:");
 		new_disk_config.fl_custom_val->range(1, 2 * 1024 * 1024 - 1);
 		new_disk_config.fl_custom_val->value(1440);
 
-		new_disk_config.fl_custom_unit_choice = new Fl_Choice(250, 95, 100, 25);
-		for (int i = 0; new_disk_config_t::unit_labels[i]; ++i)
-			new_disk_config.fl_custom_unit_choice->add(new_disk_config_t::unit_labels[i]);
-		new_disk_config.fl_custom_unit_choice->value(2);
+		new_disk_config.fl_custom_unit_choice = new Fl_Choice(250, new_disk_config.fl_single_group->y() + 40, 100, 25);
+		for (const char* unitl : new_disk_config_t::unit_labels)
+			new_disk_config.fl_custom_unit_choice->add(unitl);
+		new_disk_config.fl_custom_unit_choice->value(new_disk_config_t::unit_kb);
+
+		new_disk_config.fl_single_fs_choice = new Fl_Choice(150, new_disk_config.fl_single_group->y() + 70, 180, 25, "Filesystem:");
+		new_disk_config.fl_single_fs_choice->add("None");
+		new_disk_config.fl_single_fs_choice->add("FAT12");
+		new_disk_config.fl_single_fs_choice->add("FAT16");
+		new_disk_config.fl_single_fs_choice->add("FAT32");
+		new_disk_config.fl_single_fs_choice->value(2);
 
 		new_disk_config.fl_single_group->end();
 
-		new_disk_config.fl_multi_group = new Fl_Group(20, 50, 380, 200);
+		new_disk_config.fl_multi_group = new Fl_Group(20, 70, 420, 230, "Multiple Partition Settings");
+		new_disk_config.fl_multi_group->box(FL_ENGRAVED_FRAME);
+
 		int y_coord = new_disk_config.fl_multi_group->y();
 		new_disk_config.fl_multi_group->begin();
 		for (int i = 0; i < new_disk_config.max_partitions; ++i) {
 			y_coord += 30;
 			char label[16]; sprintf(label, "Partition %d:", i + 1);
-			new Fl_Box(FL_NO_BOX, 10, y_coord, 80, 25, label);
+			Fl_Box *cb = new Fl_Box(FL_NO_BOX, new_disk_config.fl_multi_group->x()+5, y_coord, 80, 25, nullptr); // Would store only pointer to label.
+			cb->copy_label(label);
 
 			new_disk_config.fl_multi_value[i] = new Fl_Spinner(100, y_coord, 60, 25);
 			new_disk_config.fl_multi_value[i]->range(0, 2*1024*1024-1);
 			new_disk_config.fl_multi_value[i]->value(1024);
+			new_disk_config.fl_multi_value[i]->callback(update_total_size, &new_disk_config);
 
 			new_disk_config.fl_multi_unit_choice[i] = new Fl_Choice(170, y_coord, 100, 25);
-			for (int j = 0; new_disk_config_t::unit_labels[j]; ++j)
+			for (int j = 0; j < new_disk_config_t::unit_labels_n; ++j)
 				new_disk_config.fl_multi_unit_choice[i]->add(new_disk_config_t::unit_labels[j]);
-			new_disk_config.fl_multi_unit_choice[i]->value(2);
-		}
+			new_disk_config.fl_multi_unit_choice[i]->value(new_disk_config_t::unit_kb);
+			new_disk_config.fl_multi_unit_choice[i]->callback(update_total_size, &new_disk_config);
+
+			new_disk_config.fl_multi_fs_choice[i] = new Fl_Choice(280, y_coord, 100, 25);
+			new_disk_config.fl_multi_fs_choice[i]->add("None");
+			new_disk_config.fl_multi_fs_choice[i]->add("FAT12");
+			new_disk_config.fl_multi_fs_choice[i]->add("FAT16");
+			new_disk_config.fl_multi_fs_choice[i]->add("FAT32");
+			new_disk_config.fl_multi_fs_choice[i]->value(2);
+		} //-V773
 		y_coord += 30;
-		new Fl_Box(FL_NO_BOX, 10, y_coord, 80, 25, "Total size:");
+		new Fl_Box(FL_NO_BOX, new_disk_config.fl_multi_group->x() + 5, y_coord, 80, 25, "Total size:");
 		new_disk_config.fl_total_value = new Fl_Spinner(100, y_coord, 60, 25);
 		new_disk_config.fl_total_value->range(0, 2 * 1024 * 1024 - 1);
 		new_disk_config.fl_total_value->value(1440);
 
 		new_disk_config.fl_total_unit = new Fl_Choice(170, y_coord, 100, 25);
-		for (int j = 0; new_disk_config_t::unit_labels[j]; ++j)
+		for (int j = 0; j < new_disk_config_t::unit_labels_n; ++j)
 			new_disk_config.fl_total_unit->add(new_disk_config_t::unit_labels[j]);
-		new_disk_config.fl_total_unit->value(2);
+		new_disk_config.fl_total_unit->value(new_disk_config_t::unit_kb);
+		new_disk_config.fl_total_unit->callback(update_total_size, &new_disk_config);
 
 		new_disk_config.fl_multi_group->end();
 		new_disk_config.fl_multi_group->hide();
@@ -2310,47 +2344,14 @@ extern "C" {
 		HWND hWnd = (HWND)fl_xid(win);
 		SetWindowLongPtr(hWnd, GWLP_HWNDPARENT, (LONG_PTR)Parent);
 
+		// Would crash earlie:
+		update_custom_visibility(nullptr, &new_disk_config); // Initial visibility update
+
 		while (win->shown()) { Fl::wait(); } // Better then Fl::run() for plugins -- allows reload
 
 		delete win;
 		// new_disk_config.result_confirmed ? 0 : 1
-		return ;
-#if 0
-		Fl_Window* win = new Fl_Window(300, 140, "Select Disk Image Size");
-
-		Fl_Choice* choice = new Fl_Choice(100, 30, 150, 25, "Size:");
-		choice->add("360 KB");
-		choice->add("720 KB");
-		choice->add("1.44 MB");
-		choice->add("2.88 MB");
-		choice->add("Custom");
-
-		choice->value(2); // default to 1.44 MB
-
-		Fl_Button* ok = new Fl_Button(60, 80, 80, 30, "OK");
-		ok->callback(on_ok, choice);
-
-		Fl_Button* cancel = new Fl_Button(160, 80, 80, 30, "Cancel");
-		cancel->callback(on_cancel);
-
-		win->end();
-		// win->set_modal();
-		win->show();
-		Fl::check();  // Process one round of events to ensure window is created
-
-		HWND hWnd = (HWND)fl_xid(win);
-		SetWindowLongPtr(hWnd, GWLP_HWNDPARENT, (LONG_PTR)Parent);
-		while (win->shown()) { Fl::wait(); } // Better then Fl::run() for plugins
-
-		// After dialog closes:
-		if (!selectedSize.empty()) {
-			// Store it to config or global variable
-			printf("Selected size: %s\n", selectedSize.c_str());
-		}
-		else {
-			// Cancelled
-		}
-#endif 
+		return ; //-V773
 	};
 #endif 
 
@@ -2358,4 +2359,4 @@ extern "C" {
 
 //! Notes:
 // Debug notes: To unload plugins -- send message cm_UnloadPlugins, added corresponding button.
-// Do not use Fl::run() -- it almost precludes reloading the plugin which uses FLTK.
+// Do not use Fl::run() -- it almost precludes reloading the plugin which uses FLTK. Though even without it TCmd crushes sometimes on reload of changed plugin.
