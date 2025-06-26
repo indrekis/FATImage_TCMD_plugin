@@ -3179,7 +3179,8 @@ static int get_ldnumber (	/* Returns logical drive number (-1:invalid drive numb
 
 	if (chr == ':') {	/* Is there a DOS/Windows style volume ID? */
 		i = FF_VOLUMES;
-		if (IsDigit(*tp) && tp + 2 == tt) {	/* Is it a numeric volume ID + colon? */
+//		if (IsDigit(*tp) && tp + 2 == tt) {	/* Is it a numeric volume ID + colon? */
+		if ( (*tp >= '0' && *tp < '0' + FF_VOLUMES) && tp + 2 == tt) {	/* Modified for large volume IDs */
 			i = (int)*tp - '0';	/* Get the logical drive number */
 		}
 #if FF_STR_VOLUME_ID == 1	/* Arbitrary string volume ID is enabled */
@@ -3397,9 +3398,10 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 			mbr_pt[i + j] += ld_dword(fs->win + MBR_Table + 0 * SZ_PTE + PTE_StLba);
 			while (fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x05 || fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x0F) { // Extended partition cont.
 				cur_EBR += ld_dword(fs->win + MBR_Table + 1 * SZ_PTE + PTE_StLba);
-				if ( i+j >= 4*4) return 3; // Too many extended partitions
+				// if ( i+j >= FF_VOLUMES-1) return 3; // Too many extended partitions
+				if (i + j >= FF_VOLUMES - 1) break; // Too many extended partitions
 				j++;
-				if (move_window(fs, cur_EBR ) != FR_OK) return 4;
+				//if (move_window(fs, cur_EBR ) != FR_OK) return 4;
 				mbr_pt[i + j] = ld_dword(fs->win + MBR_Table + 0 * SZ_PTE + PTE_StLba) + cur_EBR; // Convert to absolute LBA
 			}
 			move_window(fs, prev);

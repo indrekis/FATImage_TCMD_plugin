@@ -166,7 +166,7 @@
 / Drive/Volume Configurations
 /---------------------------------------------------------------------------*/
 
-#define FF_VOLUMES		24 /* 'C'-'Z', arbitrary limit */
+#define FF_VOLUMES		25 /* 'C'-'Z', arbitrary limit, + last one is for SPD disks */
 /* Number of volumes (logical drives) to be used.*/
 
 
