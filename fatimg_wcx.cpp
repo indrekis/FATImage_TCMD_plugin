@@ -274,7 +274,7 @@ struct partition_info_t {
 	uint8_t  partition_id = 0;
 };
 
-struct whole_disk_t {
+struct whole_disk_t {	
 	static constexpr uint32_t sector_size = 512;
 	minimal_fixed_string_t<MAX_PATH> archname; // Should be saved for the TCmd API
 	file_handle_t hArchFile = file_handle_t(); //opened file handles
@@ -1799,9 +1799,26 @@ extern "C" {
 		}
 	};
 
+	static BYTE conf_to_fmt_flags(int c) {
+		BYTE res = 0;
+		switch (c) {
+		case 0: return E_ECREATE; break; // Do not format -- should not happen
+		case 1: res |= FM_FAT; break; // TODO: currently selects automatically FAT12 or FAT16, fix.  //-V1037
+			// See else block of the if (fsty == FS_FAT32) in f_mkfs() source code
+		case 2: res |= FM_FAT; break; // TODO: currently selects automatically FAT12 or FAT16, fix
+		case 3: res |= FM_FAT32; break; // FAT32
+		case 4: res |= FM_ANY;  break; 
+		default:
+			plugin_config.log_print_dbg("Warning# Unknown format %d, using FM_ANY", c);
+			res |= FM_ANY;  
+		}
+		return res;
+	}
+
 	// TODO: if PK_PACK_SAVE_PATHS, silently overrides duplicated files -- fix
 	DLLEXPORT int STDCALL PackFiles(char* PackedFile, char* SubPath, char* SrcPath, char* AddList, int Flags) {
 		assert(PackedFile);
+		assert(whole_disk_t::sector_size == FF_MIN_SS);
 		//! TODO: currently prints only the first file in AddList, not all of them.
 		plugin_config.log_print_dbg("Info# PackFiles() Called with: PackedFile=\'%s\'; "
 			"SubPath=\'%s\'; SrcPath=\'%s\'; AddList=\'%s\'; Flags =0x%02X",
@@ -1825,26 +1842,14 @@ extern "C" {
 				plugin_config.log_print_dbg("Warning# Error creating new image file: %d", res);
 				return E_ECREATE; 
 			}
-			// FATFS fs;
-			if (nw.single_part) {				
-				BYTE workarea[16 * FF_MAX_SS]; // I hope dynamic allocation is overkill here
-				// strncpy(fs.image_path, PackedFile, MAX_PATH);
+			BYTE workarea[16 * FF_MAX_SS]; // I hope dynamic allocation is overkill here
+			if (nw.single_part) {
 				MKFS_PARM opt;
 				opt.n_fat = 2; // TODO: make it configurable
 				opt.align = 0; // Align to 0, so it will be aligned to the sector size
 				opt.n_root = 0; 
-				opt.au_size = 512; 
-				opt.fmt = FM_SFD;
-				switch (nw.single_fs) {
-					case 0: return E_ECREATE; break; // Do not format -- should not happen
-					case 1: opt.fmt |= FM_FAT; break; // TODO: currently selects automatically FAT12 or FAT16, fix.  //-V1037
-													  // See else block of the if (fsty == FS_FAT32) in f_mkfs() source code
-					case 2: opt.fmt |= FM_FAT; break; // TODO: currently selects automatically FAT12 or FAT16, fix
-					case 3: opt.fmt |= FM_FAT32; break; // FAT32
-					case 4: opt.fmt |= FM_ANY;  break; // 
-					default: 
-						plugin_config.log_print_dbg("Warning# Unknown format %d, using FM_ANY", nw.single_fs);
-				}
+				opt.au_size = whole_disk_t::sector_size;
+				opt.fmt = FM_SFD | conf_to_fmt_flags(nw.single_fs); 
 
 				char dsk[] = "0:";
 				dsk[0] += floppy_vol_index; 
@@ -1855,8 +1860,48 @@ extern "C" {
 					return E_ECREATE;
 				}
 			}
-			else {
-				// TODO
+			else { // Multiple partitions
+				LBA_t plist[4] = { 0 }; // Less than 100 -- are interpreted as percentage of the whole disk size								
+				
+				for(int i = 0; i < 4; ++i) {
+					if (nw.multi_units[i] == 0)
+						break; // No more partitions
+					auto cur_size = nw.multi_values[i] * nw.unit_factor(nw.multi_units[i]);
+					cur_size /= whole_disk_t::sector_size;
+					if (cur_size <= 100) {
+						cur_size = 101;
+						plugin_config.log_print_dbg("Warning# Too small paritition requested (%d), increased to 101 sectors", cur_size);
+					}
+					plist[i] = static_cast<LBA_t>(cur_size);
+				}
+
+				FRESULT fs_result = f_fdisk(0, plist, workarea, PackedFile);
+				disk_deinitialize(PackedFile);
+				if (fs_result != FR_OK) {
+					plugin_config.log_print_dbg("Warning# Error partitioning new image file (f_fdisk()): %d", static_cast<int>(fs_result));
+					return E_ECREATE;
+				}
+				for (int i = 0; i < 4; ++i) {
+					if (nw.multi_units[i] == 0)
+						break; // No more partitions
+					if (nw.multi_fs[i] == 0)
+						continue; // Skip
+					MKFS_PARM opt;
+					opt.n_fat = 2; // TODO: make it configurable
+					opt.align = 0; // Align to 0, so it will be aligned to the sector size
+					opt.n_root = 0;
+					opt.au_size = whole_disk_t::sector_size;
+					opt.fmt = FM_SFD | conf_to_fmt_flags(nw.multi_fs[i]);
+
+					char dsk[] = "0:";
+					dsk[0] += i;
+					FRESULT fs_result = f_mkfs(dsk, &opt, workarea, sizeof(workarea), PackedFile);
+					disk_deinitialize(PackedFile);
+					if (fs_result != FR_OK) {
+						plugin_config.log_print_dbg("Warning# Error creating new image file: %d", static_cast<int>(fs_result));
+						return E_ECREATE;
+					}
+				}
 			}
 		}
 
@@ -2270,6 +2315,8 @@ extern "C" {
 	}
 
 
+	// TODO: validate arguments -- for minimal size, etc.
+	// TODO: partition size = 0 means do not create this and next partitions
 	DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
 		Fl_Window* win = new Fl_Window(460, 480, "Disk Image Configuration");
 
