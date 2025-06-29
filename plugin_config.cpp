@@ -194,3 +194,8 @@ bool plugin_config_t::write_conf()
     return true;
 }
 
+const char* plugin_config_t::new_arc_t::unit_labels[unit_labels_n] = { "Bytes", "512b Sectors", "Kb",    "4Kb Blocks", "Mb" };
+size_t      plugin_config_t::new_arc_t::unit_sizes_b[unit_labels_n] = { 1,       512,            1024,    4 * 1024,       1024 * 1024 };
+const char* plugin_config_t::new_arc_t::fdd_sizes_str[fdd_sizes_n] = { "160", "180", "320", "360", "720", "1200", "1440", "2880", "Custom" };
+size_t      plugin_config_t::new_arc_t::fdd_sizes_b[fdd_sizes_n] = { 160 * 1024, 180 * 1024, 320 * 1024, 360 * 1024, 720 * 1024, 1200 * 1024, 1440 * 1024, 2880 * 1024, 0 };
+const char* plugin_config_t::new_arc_t::FS_types[FS_types_n] = { "None", "FAT12", "FAT16", "FAT32", "Auto"};

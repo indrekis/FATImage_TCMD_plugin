@@ -3361,6 +3361,7 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 	/* Sector 0 is not an FAT VBR or forced partition number wants a partition */
 
 #if FF_LBA64
+	/**/
 	if (fs->win[MBR_Table + PTE_System] == 0xEE) {	/* GPT protective MBR? */
 		DWORD n_ent, v_ent, ofs;
 		QWORD pt_lba;

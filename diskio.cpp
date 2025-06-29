@@ -199,15 +199,49 @@ extern "C" {
         void* buff		/* Buffer to send/receive control data */
     )
     {
-        // Implement flush on CTRL_SYNC? 
-        return RES_OK;
+		DRESULT res = RES_ERROR;
+        switch (cmd) {
+        case CTRL_SYNC:
+            res = RES_OK; // Implement flush on CTRL_SYNC? 
+            break;
+
+        case GET_SECTOR_COUNT: {
+            if (disk_descriptors.count(pdrv) == 0) {
+                plugin_config.log_print_dbg("Warning# in disk_ioctl, disk %d -- no such driver.", pdrv);
+                return RES_PARERR;
+            }
+            FILE* fp = disk_descriptors[pdrv].file;
+            if (!fp) {
+                plugin_config.log_print_dbg("Warning# in disk_ioctl, disk %d -- image \'%s\' is not opened.",
+                    pdrv, disk_descriptors[pdrv].PathName.data());
+                return RES_NOTRDY;
+            }
+            auto size = get_file_size(disk_descriptors[pdrv].PathName.data()); // TODO: fix to use same file handlers here and in sysio_xx.cpp
+            if(size == -1){
+                plugin_config.log_print_dbg("Warning# in disk_ioctl, disk %d -- image \'%s\' get_file_size() failed.",
+                    pdrv, disk_descriptors[pdrv].PathName.data());
+                return RES_ERROR;
+			}
+            *(DWORD*)buff = static_cast<DWORD>(size / FF_MIN_SS); // Number of sectors
+            res = RES_OK;
+        }
+			break;
+        case GET_BLOCK_SIZE:
+            *(DWORD*)buff = 1; // One sector 
+			res = RES_OK; 
+            break;
+        }
+
+        return res;
+
     }
 
     DRESULT disk_deinitialize(const char* name_in) {
         plugin_config.log_print_dbg("Info# disk_deinitialize: \'%s\'.", name_in);
         for (auto& [id, descr] : disk_descriptors) {
             if ( strcmp(descr.PathName.data(), name_in) == 0 ) {
-                fclose(descr.file);
+                if(descr.file)
+                    fclose(descr.file);
                 disk_descriptors.erase(id);
                 return RES_OK;
             }

@@ -28,6 +28,8 @@ const auto file_open_error_v = INVALID_HANDLE_VALUE;
 using file_handle_t = HANDLE;
 
 // All functions returning bool returns true on success
+bool file_exists(const char* path);
+bool create_sized_file(const char* path, size_t size, uint8_t fill_byte = 0xFF);
 file_handle_t open_file_shared_read(const char* filename);
 file_handle_t open_file_read_shared_write(const char* filename);
 file_handle_t open_file_write(const char* filename);

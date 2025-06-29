@@ -14,6 +14,46 @@
 */
 #include "sysio_winapi.h"
 
+
+bool file_exists(const char* path) {
+	DWORD attr = GetFileAttributesA(path);
+	return (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY));
+}
+
+bool create_sized_file(const char* path, size_t size, uint8_t fill_byte) {
+	HANDLE hFile = CreateFileA(
+		path,
+		GENERIC_WRITE,
+		0,
+		nullptr,
+		CREATE_ALWAYS,
+		FILE_ATTRIBUTE_NORMAL,
+		nullptr
+	);
+
+	if (hFile == INVALID_HANDLE_VALUE)
+		return false;
+
+	const size_t chunk_size = 1024*1024;
+	uint8_t* buffer = new uint8_t[chunk_size];
+	memset(buffer, fill_byte, chunk_size);
+
+	DWORD written = 0;
+	size_t total_written = 0;
+
+	while (total_written < size) {
+		DWORD to_write = static_cast<DWORD>(std::min(chunk_size, size - total_written));
+		if (!WriteFile(hFile, buffer, to_write, &written, nullptr)) {
+			CloseHandle(hFile);
+			return false;
+		}
+		total_written += written;
+	}
+
+	CloseHandle(hFile);
+	return true;
+}
+
 // INVALID_HANDLE_VALUE on error
 file_handle_t open_file_shared_read(const char* filename) {
 	file_handle_t handle;

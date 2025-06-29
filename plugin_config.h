@@ -13,6 +13,7 @@
 #include <string>
 #include <map>
 #include <cstdio>
+#include <mutex>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
@@ -61,6 +62,35 @@ struct plugin_config_t {
 	//------------------------------------------------------------
 	bool read_conf (const PackDefaultParamStruct* dps, bool reread);
 	bool write_conf();
+
+	struct new_arc_t {
+		static const int unit_labels_n = 5;
+		static const char* unit_labels[unit_labels_n];
+		static size_t      unit_sizes_b[unit_labels_n];
+		enum unit_ids { unit_b, unit_sec, unit_kb, unit_4kb, unit_mb };
+		static const int fdd_sizes_n = 9;
+		static const char* fdd_sizes_str[fdd_sizes_n];
+		static size_t      fdd_sizes_b[fdd_sizes_n];
+		static const int FS_types_n = 5;
+		static const char* FS_types[FS_types_n];
+
+		bool single_part = true;
+		int custom_unit = unit_kb;
+		size_t custom_value = 1440; // fdd_sizes_b[unit_kb] / unit_sizes_b[unit_kb];
+		int single_fs = 2; // 0 - do not create, 1 - FAT12, 2 - FAT16, 3 - FAT32, 4 - Auto-detect
+
+		std::array<size_t, 4> multi_values;
+		std::array<int, 4> multi_units;
+		std::array<int, 4> multi_fs;
+		int    total_unit = -1;
+		size_t total_value = -1;
+		bool save_config = false;
+		
+		static size_t unit_factor(int unit) {
+			return unit_sizes_b[unit];
+		}
+		new_arc_t() = default;
+	} new_arc{};
 
 private:
 	using options_map_t = std::map<std::string, std::string>;
