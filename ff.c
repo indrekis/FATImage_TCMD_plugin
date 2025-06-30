@@ -3406,7 +3406,8 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 				j++;
 				
 				next_ebr_rel = ld_dword(fs->win + MBR_Table + 1 * SZ_PTE + PTE_StLba);
-			} while (fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x05 || fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x0F);
+			} while (next_ebr_rel != 0 && fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x05 
+				                       || fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x0F);
 			if (i + j >= FF_VOLUMES) break; // Too many disks -- just skip them here too"
 			move_window(fs, prev);
 		}
