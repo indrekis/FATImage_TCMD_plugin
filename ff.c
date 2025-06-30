@@ -3352,7 +3352,7 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 )
 {
 	UINT fmt;
-	DWORD mbr_pt[FF_VOLUMES];
+	DWORD mbr_pt[FF_VOLUMES + 1]; // +1 -- for extended partition itself
 
 
 	fmt = check_fs(fs, 0);				/* Load sector 0 and check if it is an FAT VBR as SFD format */
@@ -3398,10 +3398,11 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 			mbr_pt[i + j] += ld_dword(fs->win + MBR_Table + 0 * SZ_PTE + PTE_StLba);
 			while (fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x05 || fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x0F) { // Extended partition cont.
 				cur_EBR += ld_dword(fs->win + MBR_Table + 1 * SZ_PTE + PTE_StLba);
-				if (i + j >= FF_VOLUMES - 1) break; // Too many disks -- just skip them. Was "return 3;"
+				if (i + j >= FF_VOLUMES) break; // Too many disks -- just skip them. Was "return 3;"
 				j++;
 				mbr_pt[i + j] = ld_dword(fs->win + MBR_Table + 0 * SZ_PTE + PTE_StLba) + cur_EBR; // Convert to absolute LBA
 			}
+			if (i + j >= FF_VOLUMES) break; // Too many disks -- just skip them here too"
 			move_window(fs, prev);
 		}
 	}
