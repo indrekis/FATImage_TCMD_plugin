@@ -114,6 +114,7 @@ extern "C" {
                 pdrv, disk_descriptors[pdrv].PathName.data());
             return RES_NOTRDY;
         }
+		// TODO: replace with functions that support files larger than 2GB
         if (fseek(fp, sector * FF_MIN_SS, SEEK_SET) != 0) {
             perror("fseek failed");
             //fclose(fp);
