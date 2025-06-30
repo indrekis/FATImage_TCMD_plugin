@@ -66,11 +66,11 @@ struct plugin_config_t {
 	struct new_arc_t {
 		static const int unit_labels_n = 5;
 		static const char* unit_labels[unit_labels_n];
-		static size_t      unit_sizes_b[unit_labels_n];
+		static const size_t unit_sizes_b[unit_labels_n];
 		enum unit_ids { unit_b, unit_sec, unit_kb, unit_4kb, unit_mb };
 		static const int fdd_sizes_n = 9;
 		static const char* fdd_sizes_str[fdd_sizes_n];
-		static size_t      fdd_sizes_b[fdd_sizes_n];
+		static const size_t fdd_sizes_b[fdd_sizes_n];
 		static const int FS_types_n = 5;
 		static const char* FS_types[FS_types_n];
 

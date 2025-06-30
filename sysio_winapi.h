@@ -19,6 +19,7 @@
 
 #include <exception>
 #include <cstdio>
+#include <utility>
 
 #ifndef NDEBUG
 #include <format>

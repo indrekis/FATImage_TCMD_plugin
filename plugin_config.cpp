@@ -131,6 +131,21 @@ bool plugin_config_t::read_conf(const PackDefaultParamStruct* dps, bool reread)
 		max_depth = get_option_from_map<decltype(max_depth)>("max_depth"s);
 		max_invalid_chars_in_dir = get_option_from_map<decltype(max_invalid_chars_in_dir)>("max_invalid_chars_in_dir"s);
 
+        //=========new_arc============================================
+        new_arc.single_part = get_option_from_map<decltype(new_arc.single_part)>("new_arc_single_part"s);
+        new_arc.custom_unit = get_option_from_map<decltype(new_arc.custom_unit)>("new_arc_custom_unit"s);
+        new_arc.custom_value = get_option_from_map<decltype(new_arc.custom_value)>("new_arc_custom_value"s);
+        new_arc.single_fs = get_option_from_map<decltype(new_arc.single_fs)>("new_arc_single_fs"s);
+        for (int i = 0; i < 4; ++i) {
+            new_arc.multi_values[i] = get_option_from_map<size_t>("new_arc_multi_values_"s + std::to_string(i));
+            new_arc.multi_units[i] = get_option_from_map<int>("new_arc_multi_units_"s + std::to_string(i));
+            new_arc.multi_fs[i] = get_option_from_map<int>("new_arc_multi_fs_"s + std::to_string(i));
+        }
+        new_arc.total_unit = get_option_from_map<decltype(new_arc.total_unit)>("new_arc_total_unit"s);
+        new_arc.total_value = get_option_from_map<decltype(new_arc.total_value)>("new_arc_total_value"s);
+        new_arc.save_config = get_option_from_map<decltype(new_arc.save_config)>("new_arc_save_config"s);
+        //============================================================
+
         if (allow_txt_log && log_file_path.is_empty()) {
             auto tstr = get_option_from_map<std::string>("log_file_path"s);
             log_file_path.clear();
@@ -183,6 +198,7 @@ bool plugin_config_t::write_conf()
     fprintf(cf, "search_for_boot_sector_range=%zu\n", search_for_boot_sector_range);
     fprintf(cf, "allow_dialogs=%x\n", allow_dialogs);
     fprintf(cf, "allow_txt_log=%x\n", allow_txt_log);
+	log_file_path.clear();
     log_file_path.push_back("D:\\Temp\\fatimg.txt");
     fprintf(cf, "log_file_path=%s\n", log_file_path.data());
     fprintf(cf, "debug_level=%d\n", debug_level);
@@ -190,12 +206,26 @@ bool plugin_config_t::write_conf()
     fprintf(cf, "# Values above the 11 efficiently disables the check. Beware of special value LLDE_OS2_EA = 0xFFFF\n");
     fprintf(cf, "max_invalid_chars_in_dir=%zu\n", max_invalid_chars_in_dir);
 
+    //=========new_arc============================================
+    fprintf(cf, "new_arc_single_part=%x\n", new_arc.single_part);
+    fprintf(cf, "new_arc_custom_unit=%d\n", new_arc.custom_unit);
+    fprintf(cf, "new_arc_custom_value=%zu\n", new_arc.custom_value);
+    fprintf(cf, "new_arc_single_fs=%d\n", new_arc.single_fs);
+    for (int i = 0; i < 4; ++i) {
+        fprintf(cf, "new_arc_multi_values_%d=%zu\n", i, new_arc.multi_values[i]);
+        fprintf(cf, "new_arc_multi_units_%d=%d\n", i, new_arc.multi_units[i]);
+        fprintf(cf, "new_arc_multi_fs_%d=%d\n", i, new_arc.multi_fs[i]);
+    }
+    fprintf(cf, "new_arc_total_unit=%d\n", new_arc.total_unit);
+    fprintf(cf, "new_arc_total_value=%zu\n", new_arc.total_value);
+    fprintf(cf, "new_arc_save_config=%x\n", new_arc.save_config);
+
     std::fclose(cf);
     return true;
 }
 
-const char* plugin_config_t::new_arc_t::unit_labels[unit_labels_n] = { "Bytes", "512b Sectors", "Kb",    "4Kb Blocks", "Mb" };
-size_t      plugin_config_t::new_arc_t::unit_sizes_b[unit_labels_n] = { 1,       512,            1024,    4 * 1024,       1024 * 1024 };
-const char* plugin_config_t::new_arc_t::fdd_sizes_str[fdd_sizes_n] = { "160", "180", "320", "360", "720", "1200", "1440", "2880", "Custom" };
-size_t      plugin_config_t::new_arc_t::fdd_sizes_b[fdd_sizes_n] = { 160 * 1024, 180 * 1024, 320 * 1024, 360 * 1024, 720 * 1024, 1200 * 1024, 1440 * 1024, 2880 * 1024, 0 };
-const char* plugin_config_t::new_arc_t::FS_types[FS_types_n] = { "None", "FAT12", "FAT16", "FAT32", "Auto"};
+const char*  plugin_config_t::new_arc_t::unit_labels[unit_labels_n] = { "Bytes", "512b Sectors", "Kb",    "4Kb Blocks", "Mb" };
+const size_t plugin_config_t::new_arc_t::unit_sizes_b[unit_labels_n] = { 1,       512,            1024,    4 * 1024,       1024 * 1024 };
+const char*  plugin_config_t::new_arc_t::fdd_sizes_str[fdd_sizes_n] = { "160", "180", "320", "360", "720", "1200", "1440", "2880", "Custom" };
+const size_t plugin_config_t::new_arc_t::fdd_sizes_b[fdd_sizes_n] = { 160 * 1024, 180 * 1024, 320 * 1024, 360 * 1024, 720 * 1024, 1200 * 1024, 1440 * 1024, 2880 * 1024, 0 };
+const char*  plugin_config_t::new_arc_t::FS_types[FS_types_n] = { "None", "FAT12", "FAT16", "FAT32", "Auto"};

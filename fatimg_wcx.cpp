@@ -32,11 +32,11 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include <dirent.h> 
-
 // #define FLTK_ENABLED_EXPERIMENTAL  // Here for the quick tests -- should be defined by the build system
 
 #ifdef FLTK_ENABLED_EXPERIMENTAL
+#include <dirent.h> 
+
 #include <FL/Fl.H>
 #define __MINGW32__ // Dirty hack!  Disables conflicting dirent definition for the Fl_Help_View. 
 					// It do could break something, because of the ABI change, but, at last, 
@@ -1887,6 +1887,7 @@ extern "C" {
 					plugin_config.log_print_dbg("Warning# Error partitioning new image file (f_fdisk()): %d", static_cast<int>(fs_result));
 					return E_ECREATE;
 				}
+				bool was_fmt_errors = false; 
 				for (int i = 0; i < 4; ++i) {
 					if (nw.multi_values[i] == 0)
 						break; // No more partitions
@@ -1897,19 +1898,23 @@ extern "C" {
 					opt.align = 0; // Align to 0, so it will be aligned to the sector size
 					opt.n_root = 0;
 					opt.au_size = whole_disk_t::sector_size;
-					opt.fmt = FM_SFD | conf_to_fmt_flags(nw.multi_fs[i]);
+					opt.fmt = conf_to_fmt_flags(nw.multi_fs[i]);
 
 					char dsk[] = "0:";
 					dsk[0] += i;
+					// TODO: add more detailed error diagnostics in f_mkfs(). 
 					FRESULT fs_result = f_mkfs(dsk, &opt, workarea, sizeof(workarea), PackedFile);
 					disk_deinitialize(PackedFile);
 					if (fs_result != FR_OK) {
-						plugin_config.log_print_dbg("Warning# Error creating new image file: %d", static_cast<int>(fs_result));
-						return E_ECREATE;
+						plugin_config.log_print_dbg("Warning# Error creating new image file: %d, partition No %d.", 
+							static_cast<int>(fs_result), i);
+						was_fmt_errors = true;
 					}
 				}
-#ifdef FLTK_ENABLED_EXPERIMENTAL
+				if(was_fmt_errors)
+					return E_ECREATE;
 				if (plist[1] != 0) { // We have more than one new partition
+#ifdef FLTK_ENABLED_EXPERIMENTAL
 					if (plugin_config.allow_dialogs) {
 						fl_alert("Multi-partition image created. Files are NOT yet copied because of the ambiguity.\n"
 							"Please enter the created image and repeat copying to the selected disk.");
@@ -2216,7 +2221,7 @@ extern "C" {
 		Fl_Group* fl_single_group = nullptr;
 		Fl_Group* fl_multi_group = nullptr;
 		Fl_Round_Button* fl_rb_single = nullptr;
-		int selected_single_mode = true; 
+		bool selected_single_mode = true; 
 		Fl_Choice* fl_choise_single_size = nullptr;
 		Fl_Spinner* fl_custom_val = nullptr;
 		Fl_Choice* fl_custom_unit_choice = nullptr;
@@ -2434,7 +2439,7 @@ extern "C" {
 		GUI_config.fl_total_unit->value(nw.total_unit);
 		GUI_config.fl_total_unit->callback(update_total_size, &GUI_config);
 
-		y_coord += 30;
+		//y_coord += 30;
 		GUI_config.fl_multi_group->end();
 		if(GUI_config.selected_single_mode)
 			GUI_config.fl_multi_group->hide();

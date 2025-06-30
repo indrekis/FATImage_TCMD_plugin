@@ -6229,6 +6229,7 @@ FRESULT f_mkfs (
 #endif	/* FF_FS_EXFAT */
 	{	/* Create an FAT/FAT32 volume */
 		do {
+			// TODO: add control for the FAT sub-type and cluster size
 			pau = sz_au;
 			/* Pre-determine number of clusters and FAT sub-type */
 			if (fsty == FS_FAT32) {	/* FAT32 volume */
