@@ -21,7 +21,7 @@ project(FATimage C CXX)
 set(CMAKE_CXX_STANDARD 20)
 
 set(SOURCE_FILES FAT_definitions.cpp  FAT_definitions.h  fatimg_wcx.cpp  minimal_fixed_string.h  resource.h  sysio_winapi.cpp  sysio_winapi.h wcxhead.h main_resources.rc
-string_tools.cpp string_tools.h plugin_config.cpp plugin_config.h diskio.c diskio.h ff.c ff.h ffconf.h ffsystem.c ffunicode.c)
+string_tools.cpp string_tools.h plugin_config.cpp plugin_config.h diskio.cpp diskio.h ff.c ff.h ffconf.h ffsystem.c ffunicode.c)
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)	
 	set(SOURCE_FILES ${SOURCE_FILES} fatimg_64.def)
