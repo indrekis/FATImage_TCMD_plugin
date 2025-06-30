@@ -1927,6 +1927,14 @@ extern "C" {
 		bool have_many_partitions;
 		{
 			size_t image_file_size = get_file_size(PackedFile);
+#ifdef FLTK_ENABLED_EXPERIMENTAL
+			if (image_file_size >= 2u*1024u*1024u*1024u){
+				if (plugin_config.allow_dialogs) {
+					fl_alert("Images larger than 2Tb are supported only partially, and working with them is unstable.");
+				}
+				plugin_config.log_print_dbg("Warning# Images larger than 2Tb are supported only partially, and working with them is unstable.");
+			}
+#endif 
 			auto hArchFile = open_file_read_shared_write(PackedFile);
 			if (hArchFile == file_open_error_v)
 			{
