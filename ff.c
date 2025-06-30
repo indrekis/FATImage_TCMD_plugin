@@ -3393,15 +3393,20 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 		if (part_type == 0x05 || part_type == 0x0F) { // Extended partition: 0x05 (CHS addressing) or 0x0F (LBA addressing)
 			LBA_t prev = fs->winsect;
 			LBA_t cur_EBR = mbr_pt[i];
-			j = 0; 
-			if (move_window(fs, cur_EBR) != FR_OK) return 4;
-			mbr_pt[i + j] += ld_dword(fs->win + MBR_Table + 0 * SZ_PTE + PTE_StLba);
-			while (fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x05 || fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x0F) { // Extended partition cont.
-				cur_EBR += ld_dword(fs->win + MBR_Table + 1 * SZ_PTE + PTE_StLba);
-				if (i + j >= FF_VOLUMES) break; // Too many disks -- just skip them. Was "return 3;"
+			// LBA_t next_EBR = mbr_pt[i];
+			DWORD next_ebr_rel = 0;
+			j = 0; 			
+			do { // Extended partition cont.
+				if (move_window(fs, cur_EBR + next_ebr_rel) != FR_OK)
+					break; // return 4;
+				if (i + j >= FF_VOLUMES) 
+					break; // Too many disks -- just skip them. Was "return 3;"
+				mbr_pt[i + j] = ld_dword(fs->win + MBR_Table + 0 * SZ_PTE + PTE_StLba) 
+							    + cur_EBR + next_ebr_rel; // Convert to absolute LBA
 				j++;
-				mbr_pt[i + j] = ld_dword(fs->win + MBR_Table + 0 * SZ_PTE + PTE_StLba) + cur_EBR; // Convert to absolute LBA
-			}
+				
+				next_ebr_rel = ld_dword(fs->win + MBR_Table + 1 * SZ_PTE + PTE_StLba);
+			} while (fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x05 || fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x0F);
 			if (i + j >= FF_VOLUMES) break; // Too many disks -- just skip them here too"
 			move_window(fs, prev);
 		}
