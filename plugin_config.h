@@ -39,7 +39,7 @@ struct plugin_config_t {
 	bool allow_dialogs = false;
 	bool allow_txt_log = false;
 #endif
-	minimal_fixed_string_t<MAX_PATH> log_file_path;
+	minimal_fixed_string_t<MAX_PATH> log_file_path = "D:\\Temp\\fatimg.txt";
 	file_handle_t log_file = file_handle_t();
 
 	bool use_VFAT = true;

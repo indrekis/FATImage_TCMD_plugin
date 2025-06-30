@@ -198,8 +198,8 @@ bool plugin_config_t::write_conf()
     fprintf(cf, "search_for_boot_sector_range=%zu\n", search_for_boot_sector_range);
     fprintf(cf, "allow_dialogs=%x\n", allow_dialogs);
     fprintf(cf, "allow_txt_log=%x\n", allow_txt_log);
-	log_file_path.clear();
-    log_file_path.push_back("D:\\Temp\\fatimg.txt");
+	// log_file_path.clear();
+    // log_file_path.push_back("D:\\Temp\\fatimg.txt");
     fprintf(cf, "log_file_path=%s\n", log_file_path.data());
     fprintf(cf, "debug_level=%d\n", debug_level);
     fprintf(cf, "max_depth=%zu\n", max_depth);
@@ -207,7 +207,7 @@ bool plugin_config_t::write_conf()
     fprintf(cf, "max_invalid_chars_in_dir=%zu\n", max_invalid_chars_in_dir);
 
     //=========new_arc============================================
-    fprintf(cf, "new_arc_single_part=%x\n", new_arc.single_part);
+    fprintf(cf, "\nnew_arc_single_part=%x\n", new_arc.single_part);
     fprintf(cf, "new_arc_custom_unit=%d\n", new_arc.custom_unit);
     fprintf(cf, "new_arc_custom_value=%zu\n", new_arc.custom_value);
     fprintf(cf, "new_arc_single_fs=%d\n", new_arc.single_fs);

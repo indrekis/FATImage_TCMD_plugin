@@ -56,6 +56,8 @@
 #include <FL/Fl_Group.H>
 #include <FL/Fl_Check_Button.H>
 #include <FL/Fl_Help_View.H>
+#include <FL/Fl_File_Input.H>
+#include <FL/Fl_File_Chooser.H>
 #endif
 
 extern "C" {
@@ -2223,6 +2225,117 @@ extern "C" {
 	}
 
 #ifdef FLTK_ENABLED_EXPERIMENTAL
+	//====================================================================================
+	struct GUI_global_config_t {
+		bool result_confirmed = false;
+	} GUI_global_config;
+
+	void on_config_ok(Fl_Widget*, void* data) {
+		auto c = static_cast<GUI_global_config_t*>(data);
+
+		// Values are already set from controls; just confirm
+		c->result_confirmed = true;
+		Fl::first_window()->hide();
+	}
+
+	void on_config_cancel(Fl_Widget*, void* data) {
+		auto c = static_cast<GUI_global_config_t*>(data);
+		c->result_confirmed = false;
+		Fl::first_window()->hide();
+	}
+
+	void select_file_cb(Fl_Widget*, void* fsi) {
+		auto fs = static_cast<Fl_File_Input*>(fsi);
+		const char* path = fl_file_chooser("Choose a log file", "*", plugin_config.log_file_path.data());
+		fs->value(path ? path : plugin_config.log_file_path.data()); // If canceled, keep the old value
+	}
+
+	void show_global_config_dialog(GUI_global_config_t& config) {
+		Fl_Window* win = new Fl_Window(500, 440, "Global plugin configuration");
+
+		int y = 20;
+		const int dy = 30;
+
+		Fl_Check_Button* cb_ignore_boot_sign = new Fl_Check_Button(20, y, 300, 25, "Ignore boot signature");
+		cb_ignore_boot_sign->value(plugin_config.ignore_boot_signature); y += dy;
+
+		Fl_Check_Button* cb_allow_dialogs = new Fl_Check_Button(20, y, 300, 25, "Allow dialogs");
+		cb_allow_dialogs->value(plugin_config.allow_dialogs); y += dy;
+
+		Fl_Check_Button* cb_allow_txt_log = new Fl_Check_Button(20, y, 300, 25, "Allow text log");
+		cb_allow_txt_log->value(plugin_config.allow_txt_log); y += dy;
+
+		new Fl_Box(15, y, 120, 35, "Log file path:");
+		Fl_File_Input* input_log = new Fl_File_Input(135, y, 230, 35);
+		input_log->value(plugin_config.log_file_path.data()); 
+		Fl_Button* select_file = new Fl_Button(380, y, 70, 35, "Select...");
+		select_file->callback(select_file_cb, input_log);
+		y += dy;
+
+		Fl_Check_Button* cb_use_VFAT = new Fl_Check_Button(20, y, 300, 25, "Use VFAT");
+		cb_use_VFAT->value(plugin_config.use_VFAT); y += dy;
+
+		Fl_Check_Button* cb_dos_images = new Fl_Check_Button(20, y, 300, 25, "Process DOS 1.xx images");
+		cb_dos_images->value(plugin_config.process_DOS1xx_images); y += dy;
+
+		Fl_Check_Button* cb_mbr = new Fl_Check_Button(20, y, 300, 25, "Process MBR");
+		cb_mbr->value(plugin_config.process_MBR); y += dy;
+
+		Fl_Check_Button* cb_exceptions = new Fl_Check_Button(20, y, 400, 25, "Process DOS 1.xx exceptions");
+		cb_exceptions->value(plugin_config.process_DOS1xx_exceptions); y += dy;
+
+		Fl_Check_Button* cb_boot_search = new Fl_Check_Button(20, y, 400, 25, "Search for boot sector");
+		cb_boot_search->value(plugin_config.search_for_boot_sector); y += dy;
+
+		new Fl_Box(20, y, 200, 25, "Boot search range (bytes):");
+		Fl_Spinner* spn_boot_range = new Fl_Spinner(250, y, 100, 25);
+		spn_boot_range->range(0, 1024 * 1024);
+		spn_boot_range->value(static_cast<double>(plugin_config.search_for_boot_sector_range)); y += dy;
+
+		new Fl_Box(20, y, 200, 25, "Max directory depth:");
+		Fl_Spinner* spn_depth = new Fl_Spinner(250, y, 100, 25);
+		spn_depth->range(1, 10000);
+		spn_depth->value(static_cast<double>(plugin_config.max_depth)); y += dy;
+
+		new Fl_Box(20, y, 200, 25, "Max invalid chars in dir:");
+		Fl_Spinner* spn_invalid = new Fl_Spinner(250, y, 100, 25);
+		spn_invalid->range(0, 255);
+		spn_invalid->value(static_cast<double>(plugin_config.max_invalid_chars_in_dir)); y += dy;
+
+		Fl_Button* ok = new Fl_Button(120, y + 20, 100, 30, "OK");
+		ok->callback(on_config_ok, &config);
+
+		Fl_Button* cancel = new Fl_Button(260, y + 20, 100, 30, "Cancel");
+		cancel->callback(on_config_cancel, &config);
+
+		win->end();
+		win->set_modal();
+		win->show();
+
+		while (win->shown()) Fl::wait();
+		
+		if (config.result_confirmed) {
+			std::lock_guard<std::mutex> lg{ plugin_config_inuse };
+			plugin_config.ignore_boot_signature = cb_ignore_boot_sign->value();
+			plugin_config.allow_dialogs = cb_allow_dialogs->value();
+			plugin_config.allow_txt_log = cb_allow_txt_log->value();
+			plugin_config.log_file_path = input_log->value();
+			plugin_config.use_VFAT = cb_use_VFAT->value();
+			plugin_config.process_DOS1xx_images = cb_dos_images->value();
+			plugin_config.process_MBR = cb_mbr->value();
+			plugin_config.process_DOS1xx_exceptions = cb_exceptions->value();
+			plugin_config.search_for_boot_sector = cb_boot_search->value();
+			plugin_config.search_for_boot_sector_range = static_cast<size_t>(spn_boot_range->value());
+			plugin_config.max_depth = static_cast<size_t>(spn_depth->value());
+			plugin_config.max_invalid_chars_in_dir = static_cast<size_t>(spn_invalid->value());
+			if (plugin_config.new_arc.save_config)
+				plugin_config.write_conf();
+		}
+
+		delete win;
+	}
+	//====================================================================================
+
 	struct GUI_config_t {
 		Fl_Group* fl_single_group = nullptr;
 		Fl_Group* fl_multi_group = nullptr;
@@ -2480,8 +2593,14 @@ extern "C" {
 		Fl_Button* ok = new Fl_Button(80, y_coord, 100, 30, "OK");
 		ok->callback(on_ok, &GUI_config);
 
-		Fl_Button* cancel = new Fl_Button(220, y_coord, 100, 30, "Cancel");
+		Fl_Button* cancel = new Fl_Button(200, y_coord, 100, 30, "Cancel");
 		cancel->callback(on_cancel, &GUI_config);
+
+		Fl_Button* global_conf = new Fl_Button(320, y_coord, 110, 30, "Global config");
+		global_conf->labelfont(FL_HELVETICA_BOLD_ITALIC);
+		global_conf->callback([](Fl_Widget*, void*) {
+			show_global_config_dialog(GUI_global_config);
+			});
 
 
 		win->end();
@@ -2499,6 +2618,7 @@ extern "C" {
 		delete win;
 		return ; //-V773
 	};
+
 #endif 
 
 }
