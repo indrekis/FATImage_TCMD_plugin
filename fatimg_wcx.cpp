@@ -1602,7 +1602,6 @@ extern "C" {
 		hArcData->pLocChangeVol = pChangeVolProc;
 	}
 
-	// TODO: Implement notifications on progress
 	// This function allows you to notify user about the progress when you un/pack files
 	DLLEXPORT void STDCALL SetProcessDataProc(archive_HANDLE hArcData, tProcessDataProc pProcessDataProc)
 	{
@@ -1648,7 +1647,6 @@ extern "C" {
 		return is_OK;
 	}
 
-	//! TODO: Remove new (or implement creation later?) (TO implement, use pre-created empty FDD images?)
 	DLLEXPORT int STDCALL GetPackerCaps() {
 		return PK_CAPS_NEW | PK_CAPS_MODIFY | PK_CAPS_DELETE | PK_CAPS_BY_CONTENT | PK_CAPS_SEARCHTEXT | PK_CAPS_MULTIPLE;
 	}
@@ -2132,7 +2130,7 @@ extern "C" {
 			f_closedir(&dir);
 
 			// Delete the now-empty directory
-			if (fno.fattrib & AM_RDO) { // TODO: test! 
+			if (fno.fattrib & AM_RDO) { 
 				f_chmod(path, 0, AM_RDO); // Clear Read-only flag
 			}
 			return f_unlink(path);
@@ -2342,7 +2340,6 @@ extern "C" {
 
 
 	// TODO: validate arguments -- for minimal size, etc.
-	// TODO: partition size = 0 means do not create this and next partitions
 	DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
 		{
 			bool res;
@@ -2503,7 +2500,7 @@ extern "C" {
 // Do not use Fl::run() -- it almost precludes reloading the plugin which uses FLTK. Though even without it TCmd crushes sometimes on reload of changed plugin.
 // 
 // Make local copy of the plugin_config for the unpacker thread safity? 
-// Use mutex in debug and log prints 
+// Use mutex in debug and log prints?
 //
 // TODO: add checks for partition sizes
 // Currenyly do not create extended partitions
