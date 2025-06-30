@@ -660,6 +660,11 @@ static_assert(sizeof(GPT_PTH_t) == 512, "Wrong size of GPT_PTH_t");
 //! https://wiki.osdev.org/ExFAT -- contains CRC calculations code 
 //! https://wiki.osdev.org/FAT
 //! See also: https://en.wikipedia.org/wiki/Filename#Comparison_of_filename_limitations
+//! https://thestarman.pcministry.com/asm/mbr/PartTables.htm
+//! https://thestarman.pcministry.com/asm/mbr/PartTables2.htm
+//! https://thestarman.pcministry.com/asm/mbr/index.html -- All the Details of many versions of
+//!		both MBR(Master Boot Records) and OS Boot Sectors(also called : Volume Boot Records)
+
 //! 
 //! Interestin or important formats notes:
 // 1. XDF images seem to be interpreted correctly. Additionally: http://www.os2museum.com/wp/the-xdf-diskette-format/
