@@ -3351,7 +3351,7 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 	UINT part		/* Partition to fined = 0:find as SFD and partitions, >0:forced partition number */
 )
 {
-	UINT fmt, i;
+	UINT fmt;
 	DWORD mbr_pt[FF_VOLUMES];
 
 
@@ -3361,7 +3361,7 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 	/* Sector 0 is not an FAT VBR or forced partition number wants a partition */
 
 #if FF_LBA64
-	/**/
+	/*  Required modifications because of other changes for this function */
 	if (fs->win[MBR_Table + PTE_System] == 0xEE) {	/* GPT protective MBR? */
 		DWORD n_ent, v_ent, ofs;
 		QWORD pt_lba;
@@ -3383,26 +3383,23 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
 		return 3;	/* Not found */
 	}
 #endif
-	if (FF_MULTI_PARTITION && part > FF_VOLUMES) return 3;	/* MBR has 4 partitions max */
+	if (FF_MULTI_PARTITION && part > FF_VOLUMES) return 3;	/* MBR has 4 partitions max, but here we allowed FF_VOLUMES-1 disks on MBR-disk*/
 	UINT j = 0;
+	UINT i = 0; 		/* i: partition index, j: current extended partition disk index */
+	//! As research showed that multiple extended partitions are highly improbable, expect only one extended partition here
 	for (i = 0; i < 4; i++) {		/* Load partition offset in the MBR */
 		mbr_pt[i + j] = ld_dword(fs->win + MBR_Table + i * SZ_PTE + PTE_StLba);
 		BYTE part_type = fs->win[MBR_Table + i * SZ_PTE + PTE_System];	/* Partition type */
-//		if(i>0) 
-//			mbr_pt[i] += mbr_pt[i - 1];	/* Convert to absolute LBA */ // PTE_System 
-		// QnD temporary fix 
 		if (part_type == 0x05 || part_type == 0x0F) { // Extended partition: 0x05 (CHS addressing) or 0x0F (LBA addressing)
 			LBA_t prev = fs->winsect;
 			LBA_t cur_EBR = mbr_pt[i];
-			j = 0; //!!! FIX -- only one extended partition now
+			j = 0; 
 			if (move_window(fs, cur_EBR) != FR_OK) return 4;
 			mbr_pt[i + j] += ld_dword(fs->win + MBR_Table + 0 * SZ_PTE + PTE_StLba);
 			while (fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x05 || fs->win[MBR_Table + 1 * SZ_PTE + PTE_System] == 0x0F) { // Extended partition cont.
 				cur_EBR += ld_dword(fs->win + MBR_Table + 1 * SZ_PTE + PTE_StLba);
-				// if ( i+j >= FF_VOLUMES-1) return 3; // Too many extended partitions
-				if (i + j >= FF_VOLUMES - 1) break; // Too many extended partitions
+				if (i + j >= FF_VOLUMES - 1) break; // Too many disks -- just skip them. Was "return 3;"
 				j++;
-				//if (move_window(fs, cur_EBR ) != FR_OK) return 4;
 				mbr_pt[i + j] = ld_dword(fs->win + MBR_Table + 0 * SZ_PTE + PTE_StLba) + cur_EBR; // Convert to absolute LBA
 			}
 			move_window(fs, prev);
