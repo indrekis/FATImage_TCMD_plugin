@@ -38,6 +38,11 @@
 
 #ifdef FLTK_ENABLED_EXPERIMENTAL
 #include <FL/Fl.H>
+#define __MINGW32__ // Dirty hack!  Disables conflicting dirent definition for the Fl_Help_View. 
+					// It do could break something, because of the ABI change, but, at last, 
+					// in this header there no other __MINGW32__ usages.
+#include <FL/filename.H>
+#undef __MINGW32__
 #include <FL/Fl_Window.H>
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Box.H>
@@ -50,6 +55,7 @@
 #include <FL/Fl_Input.H>
 #include <FL/Fl_Group.H>
 #include <FL/Fl_Check_Button.H>
+#include <FL/Fl_Help_View.H>
 #endif
 
 extern "C" {
@@ -1864,7 +1870,7 @@ extern "C" {
 				LBA_t plist[4] = { 0 }; // Less than 100 -- are interpreted as percentage of the whole disk size								
 				
 				for(int i = 0; i < 4; ++i) {
-					if (nw.multi_units[i] == 0)
+					if (nw.multi_values[i] == 0)
 						break; // No more partitions
 					auto cur_size = nw.multi_values[i] * nw.unit_factor(nw.multi_units[i]);
 					cur_size /= whole_disk_t::sector_size;
@@ -1882,7 +1888,7 @@ extern "C" {
 					return E_ECREATE;
 				}
 				for (int i = 0; i < 4; ++i) {
-					if (nw.multi_units[i] == 0)
+					if (nw.multi_values[i] == 0)
 						break; // No more partitions
 					if (nw.multi_fs[i] == 0)
 						continue; // Skip
@@ -1901,6 +1907,16 @@ extern "C" {
 						plugin_config.log_print_dbg("Warning# Error creating new image file: %d", static_cast<int>(fs_result));
 						return E_ECREATE;
 					}
+				}
+#ifdef FLTK_ENABLED_EXPERIMENTAL
+				if (plist[1] != 0) { // We have more than one new partition
+					if (plugin_config.allow_dialogs) {
+						fl_alert("Multi-partition image created. Files are NOT yet copied because of the ambiguity.\n"
+							"Please enter the created image and repeat copying to the selected disk.");
+					}
+#endif 
+					plugin_config.log_print_dbg("Info# Multi-partition image created, exiting.");
+					return E_EABORTED;
 				}
 			}
 		}
@@ -2200,6 +2216,7 @@ extern "C" {
 		Fl_Group* fl_single_group = nullptr;
 		Fl_Group* fl_multi_group = nullptr;
 		Fl_Round_Button* fl_rb_single = nullptr;
+		int selected_single_mode = true; 
 		Fl_Choice* fl_choise_single_size = nullptr;
 		Fl_Spinner* fl_custom_val = nullptr;
 		Fl_Choice* fl_custom_unit_choice = nullptr;
@@ -2247,10 +2264,12 @@ extern "C" {
 		if (w == conf->fl_rb_single) {
 			conf->fl_single_group->show();
 			conf->fl_multi_group->hide();
+			GUI_config.selected_single_mode = true;
 		}
 		else {
 			conf->fl_single_group->hide();
 			conf->fl_multi_group->show();
+			GUI_config.selected_single_mode = false;
 			update_total_size(nullptr, data);
 		}
 		Fl::first_window()->redraw();
@@ -2305,6 +2324,8 @@ extern "C" {
 		}
 
 		plugin_config.new_arc.save_config = conf->fl_save_config->value();
+		if(plugin_config.new_arc.save_config)
+			plugin_config.write_conf();
 
 		Fl::first_window()->hide();
 	}
@@ -2318,35 +2339,48 @@ extern "C" {
 	// TODO: validate arguments -- for minimal size, etc.
 	// TODO: partition size = 0 means do not create this and next partitions
 	DLLEXPORT void STDCALL ConfigurePacker(HWND Parent, HINSTANCE DllInstance) {
+		{
+			bool res;
+			std::lock_guard<std::mutex> lock(plugin_config_inuse); // Not sure, if it is required here, but better to be safe
+			res = plugin_config.read_conf(nullptr, true);
+			if (!res) { // Create default configuration if conf file is absent
+				plugin_config.write_conf();
+			} // We have possible race condition here, though I hope it would not manifest in practice
+		}
+
+		auto &nw = plugin_config.new_arc;
+
 		Fl_Window* win = new Fl_Window(460, 480, "Disk Image Configuration");
 
 		GUI_config.fl_rb_single = new Fl_Round_Button(20, 20, 180, 20, "Single partition");
 		GUI_config.fl_rb_single->type(FL_RADIO_BUTTON);
-		GUI_config.fl_rb_single->value(1);
+		GUI_config.fl_rb_single->value(GUI_config.selected_single_mode);
 		GUI_config.fl_rb_single->callback(on_select_mode, &GUI_config);
 
 		Fl_Round_Button* rb_multi = new Fl_Round_Button(220, 20, 180, 20, "Multiple partitions");
 		rb_multi->type(FL_RADIO_BUTTON);
+		rb_multi->value(static_cast<int>(!GUI_config.selected_single_mode));
 		rb_multi->callback(on_select_mode, &GUI_config);
-		// new_disk_config.fl_single_group = new Fl_Group(20, 50, 380, 120);
+
 		GUI_config.fl_single_group = new Fl_Group(20, 70, 420, 120, "Single Partition Settings");
 		GUI_config.fl_single_group->box(FL_ENGRAVED_FRAME);
 
 		GUI_config.fl_single_group->begin();
 		GUI_config.fl_choise_single_size = new Fl_Choice(150, GUI_config.fl_single_group->y() + 10, 180, 25, "Disk size:");
-		for (const char* size : plugin_config.new_arc.fdd_sizes_str)
-			GUI_config.fl_choise_single_size->add(size);
-		GUI_config.fl_choise_single_size->value(6);
+		bool non_custom_size = true; 
+		for (const char* size_str : plugin_config.new_arc.fdd_sizes_str) 
+			GUI_config.fl_choise_single_size->add(size_str);
+		GUI_config.fl_choise_single_size->value(nw.fdd_size_to_name_idx(nw.custom_value)); // Custom should always be the last one in the list
 		GUI_config.fl_choise_single_size->callback(update_custom_visibility, &GUI_config);
 
 		GUI_config.fl_custom_val = new Fl_Spinner(150, GUI_config.fl_single_group->y() + 40, 80, 25, "Size:");
 		GUI_config.fl_custom_val->range(1, 2 * 1024 * 1024 - 1);
-		GUI_config.fl_custom_val->value(1440);
+		GUI_config.fl_custom_val->value( static_cast<double>(nw.custom_value)); 
 
 		GUI_config.fl_custom_unit_choice = new Fl_Choice(250, GUI_config.fl_single_group->y() + 40, 100, 25);
 		for (const char* unitl : plugin_config.new_arc.unit_labels)
 			GUI_config.fl_custom_unit_choice->add(unitl);
-		GUI_config.fl_custom_unit_choice->value(plugin_config.new_arc.unit_kb);
+		GUI_config.fl_custom_unit_choice->value(nw.custom_unit);
 
 		GUI_config.fl_single_fs_choice = new Fl_Choice(150, GUI_config.fl_single_group->y() + 70, 180, 25, "Filesystem:");
 		for (const char* FTt : plugin_config.new_arc.FS_types) {
@@ -2354,61 +2388,91 @@ extern "C" {
 				continue; 
 			GUI_config.fl_single_fs_choice->add(FTt);
 		}
-		GUI_config.fl_single_fs_choice->value(2); // FAT16 
+		GUI_config.fl_single_fs_choice->value(nw.single_fs-1); // -1 because "none" was skipped
 
 		GUI_config.fl_single_group->end();
+		if (!GUI_config.selected_single_mode)
+			GUI_config.fl_single_group->hide();
 
-		GUI_config.fl_multi_group = new Fl_Group(20, 70, 420, 230, "Multiple Partition Settings");
+		GUI_config.fl_multi_group = new Fl_Group(20, 70, 420, 165, "Multiple Partition Settings");
 		GUI_config.fl_multi_group->box(FL_ENGRAVED_FRAME);
 
-		int y_coord = GUI_config.fl_multi_group->y();
+		int y_coord = GUI_config.fl_multi_group->y() + 10;
 		GUI_config.fl_multi_group->begin();
 		for (int i = 0; i < GUI_config.max_partitions; ++i) {
-			y_coord += 30;
 			char label[16]; sprintf(label, "Partition %d:", i + 1);
 			Fl_Box *cb = new Fl_Box(FL_NO_BOX, GUI_config.fl_multi_group->x()+5, y_coord, 80, 25, nullptr); // Would store only pointer to label.
 			cb->copy_label(label);
 
 			GUI_config.fl_multi_value[i] = new Fl_Spinner(100, y_coord, 60, 25);
 			GUI_config.fl_multi_value[i]->range(0, 2*1024*1024-1);
-			GUI_config.fl_multi_value[i]->value(1024);
+			GUI_config.fl_multi_value[i]->value(static_cast<double>(nw.multi_values[i]));
 			GUI_config.fl_multi_value[i]->callback(update_total_size, &GUI_config);
 
 			GUI_config.fl_multi_unit_choice[i] = new Fl_Choice(170, y_coord, 100, 25);
 			for (int j = 0; j < plugin_config.new_arc.unit_labels_n; ++j)
 				GUI_config.fl_multi_unit_choice[i]->add(plugin_config.new_arc.unit_labels[j]);
-			GUI_config.fl_multi_unit_choice[i]->value(plugin_config.new_arc.unit_kb);
+			// GUI_config.fl_multi_unit_choice[i]->value(plugin_config.new_arc.unit_kb);
+			GUI_config.fl_multi_unit_choice[i]->value(nw.multi_units[i]);
 			GUI_config.fl_multi_unit_choice[i]->callback(update_total_size, &GUI_config);
 
 			GUI_config.fl_multi_fs_choice[i] = new Fl_Choice(280, y_coord, 100, 25);
 			for (const char* FTt : plugin_config.new_arc.FS_types)
-				GUI_config.fl_multi_fs_choice[i]->add(FTt);
-			// Add "auto" field to select based on the MS preferences:
-			GUI_config.fl_multi_fs_choice[i]->value(2); // FAT16 by default
+				GUI_config.fl_multi_fs_choice[i]->add(FTt);			
+			GUI_config.fl_multi_fs_choice[i]->value(nw.multi_fs[i]); // FAT16 by default
+
+			y_coord += 30;
 		} //-V773
-		y_coord += 30;
 		new Fl_Box(FL_NO_BOX, GUI_config.fl_multi_group->x() + 5, y_coord, 80, 25, "Total size:");
 		GUI_config.fl_total_value = new Fl_Spinner(100, y_coord, 60, 25);
 		GUI_config.fl_total_value->range(0, 2 * 1024 * 1024 - 1);
-		GUI_config.fl_total_value->value(1440);
+		GUI_config.fl_total_value->value(static_cast<double>(nw.total_value));
 
 		GUI_config.fl_total_unit = new Fl_Choice(170, y_coord, 100, 25);
 		for (int j = 0; j < plugin_config.new_arc.unit_labels_n; ++j)
 			GUI_config.fl_total_unit->add(plugin_config.new_arc.unit_labels[j]);
-		GUI_config.fl_total_unit->value(plugin_config.new_arc.unit_kb);
+		GUI_config.fl_total_unit->value(nw.total_unit);
 		GUI_config.fl_total_unit->callback(update_total_size, &GUI_config);
 
+		y_coord += 30;
 		GUI_config.fl_multi_group->end();
-		GUI_config.fl_multi_group->hide();
+		if(GUI_config.selected_single_mode)
+			GUI_config.fl_multi_group->hide();
 
-		Fl_Button* ok = new Fl_Button(80, 380, 100, 30, "OK");
+		y_coord = GUI_config.fl_multi_group->y() + GUI_config.fl_multi_group->h() + 10; // Reset y coordinate after groups
+		Fl_Help_View* help = new Fl_Help_View(30, y_coord, 400, 150);
+		help->value(
+			// "<h3>Attention!</h3>"
+			"<b>Important:</b>"
+			"<ul>"
+			"<li>When more than one partition is created, <font color='red'>copying is not done</font>, because of ambiguity." 
+			    "Please open created image, select required disk and repeat copying.</li>"
+			"<li>Note: a multi-partition image can have just one partition, which then would look the same in listing as a non-MBR image.</li>"
+			"<li>First zero-sized partition means that it and all the next would not be created.</li>"
+			"<li>Use \"None\" to skip partition formatting.</li>"
+			"<li>Extended partitions are not yet supported.</li>"
+			"</ul>"
+			"<b>Known bugs:</b>"
+			"<ul>"
+			"<li>FAT12/FAT16 is currently selected based on image size.</li>"
+			"<li>Cluster size is not selected appropriately, so it cannot create images with a size above some limit, eg, FAT16 images larger than 32 Mb.</li>"
+			"<li>Minimal sizes are not checked yet -- creation can fail later.</li>"
+			"</ul>"
+			"Most bugs are because the way FatFS lib is implemented -- it is developed with other requirements in mind, so I need to change it steadily."
+		);
+		y_coord += help->h() + 10;
+		// TODO: Hide not created partitions
+
+		GUI_config.fl_save_config = new Fl_Check_Button(20, y_coord, 200, 20, "Save config");
+		GUI_config.fl_save_config->value(1);
+
+		y_coord += 30;
+		Fl_Button* ok = new Fl_Button(80, y_coord, 100, 30, "OK");
 		ok->callback(on_ok, &GUI_config);
 
-		Fl_Button* cancel = new Fl_Button(220, 380, 100, 30, "Cancel");
+		Fl_Button* cancel = new Fl_Button(220, y_coord, 100, 30, "Cancel");
 		cancel->callback(on_cancel, &GUI_config);
 
-		GUI_config.fl_save_config = new Fl_Check_Button(20, 320, 200, 20, "Save config");
-		GUI_config.fl_save_config->value(1);
 
 		win->end();
 		win->set_modal();

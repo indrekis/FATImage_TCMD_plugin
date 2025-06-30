@@ -79,16 +79,33 @@ struct plugin_config_t {
 		size_t custom_value = 1440; // fdd_sizes_b[unit_kb] / unit_sizes_b[unit_kb];
 		int single_fs = 2; // 0 - do not create, 1 - FAT12, 2 - FAT16, 3 - FAT32, 4 - Auto-detect
 
-		std::array<size_t, 4> multi_values;
-		std::array<int, 4> multi_units;
-		std::array<int, 4> multi_fs;
-		int    total_unit = -1;
-		size_t total_value = -1;
+		std::array<size_t, 4> multi_values{ 1024, 1024, 1024, 1024 };
+		std::array<int, 4> multi_units{ unit_kb, unit_kb, unit_kb, unit_kb };
+		std::array<int, 4> multi_fs{ 2, 2, 2, 2 };
+		int    total_unit = 2;
+		size_t total_value = 4*1024;
 		bool save_config = false;
 		
 		static size_t unit_factor(int unit) {
 			return unit_sizes_b[unit];
 		}
+		size_t fdd_name_to_size(const char* str) { // Not tested yet
+			for(int i = 0; i < fdd_sizes_n-1; ++i) {
+				if (strcmp(str, fdd_sizes_str[i]) == 0) {
+					return fdd_sizes_b[i] / unit_factor(custom_unit);
+				}
+			}
+			return custom_value / unit_factor(custom_unit); // Custom should always be the last one in the list
+		}
+		int fdd_size_to_name_idx(size_t size) { 
+			for(int i = 0; i < fdd_sizes_n-1; ++i) {
+				if (fdd_sizes_b[i] / unit_factor(custom_unit) == size) {
+					return i;
+				}
+			}
+			return fdd_sizes_n - 1; // Custom should always be the last one in the list
+		}
+
 		new_arc_t() = default;
 	} new_arc{};
 
