@@ -22,6 +22,7 @@
 struct disk_descriptor_t {
     FILE* file;          
     minimal_fixed_string_t<MAX_PATH> PathName;
+    size_t boot_sector_offset;
 };
 
 //std::mutex disk_deskriptors_mux;
@@ -40,7 +41,8 @@ extern "C" {
 
     DSTATUS disk_initialize(
         BYTE pdrv,				/* Physical drive nmuber to identify the drive */
-        const char* image_path
+        const char* image_path,
+		size_t boot_sector_offset	/* Offset to the boot sector in the image file (in bytes) */
     )
     {
         plugin_config.log_print_dbg("Info# Initializing disk %d, for filename %s, in disk_initialize",
@@ -52,10 +54,10 @@ extern "C" {
             return STA_PROTECT; 
         }
 
-        disk_descriptors[pdrv] = { nullptr, image_path};
+        disk_descriptors[pdrv] = { nullptr, image_path, boot_sector_offset };
 
         FILE* fp = fopen(image_path, "rb+");
-        disk_descriptors[pdrv] = { fp, image_path };
+        disk_descriptors[pdrv] = { fp, image_path, boot_sector_offset };
 
         if (!fp) {
             plugin_config.log_print_dbg("Warning# in disk_initialize, failed to opend image %s",
@@ -115,13 +117,7 @@ extern "C" {
             return RES_NOTRDY;
         }
 		// TODO: replace with functions that support files larger than 2GB
-        if (fseek(fp, sector * FF_MIN_SS, SEEK_SET) != 0) {
-            perror("fseek failed");
-            //fclose(fp);
-            return RES_ERROR;
-        }
-
-        if ( fseek(fp, sector * FF_MIN_SS, SEEK_SET) != 0) {
+        if ( fseek(fp, sector * FF_MIN_SS + disk_descriptors[pdrv].boot_sector_offset, SEEK_SET) != 0) {
             int cur_err = errno;
             plugin_config.log_print_dbg("Warning# in disk_read, disk %d -- image \'%s\' seek error, errno = %d, \'%s\'.",
                 pdrv, disk_descriptors[pdrv].PathName.data(), cur_err, strerror(cur_err) );
@@ -167,7 +163,7 @@ extern "C" {
             return RES_NOTRDY;
         }
 
-        if (fseek(fp, sector * FF_MIN_SS, SEEK_SET) != 0) {
+        if (fseek(fp, sector * FF_MIN_SS + disk_descriptors[pdrv].boot_sector_offset, SEEK_SET) != 0) {
             int cur_err = errno;
             plugin_config.log_print_dbg("Warning# in disk_write, disk %d -- image \'%s\' seek error, errno = %d, \'%s\'.",
                 pdrv, disk_descriptors[pdrv].PathName.data(), cur_err, strerror(cur_err));

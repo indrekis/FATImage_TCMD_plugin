@@ -1787,8 +1787,9 @@ extern "C" {
 		char disk_number[3] = "0:";
 		FRESULT fs_result;
 	public:
-		FatFS_mounter_t(int disk_number_in, const char* archive_name) {
+		FatFS_mounter_t(int disk_number_in, const char* archive_name, size_t boot_sector_offset) {
 			strncpy(fs.image_path, archive_name, MAX_PATH);
+			fs.boot_sector_offset = boot_sector_offset;
 			disk_number[0] += disk_number_in;
 			fs_result = f_mount(&fs, disk_number, 1);
 		}
@@ -1927,6 +1928,7 @@ extern "C" {
 		}
 
 		bool have_many_partitions;
+		size_t boot_sector_offset = 0;
 		{
 			size_t image_file_size = get_file_size(PackedFile);
 #ifdef FLTK_ENABLED_EXPERIMENTAL
@@ -1953,6 +1955,9 @@ extern "C" {
 				return E_EREAD;
 			}
 			have_many_partitions = (arch.disks.size() >= 2);
+			if (!have_many_partitions) { // Safety measure
+				boot_sector_offset = arch.disks[0].get_boot_sector_offset();
+			}
 		}
 
 		char drive_letter;
@@ -1979,7 +1984,7 @@ extern "C" {
 			}
 		}
 
-		FatFS_mounter_t fatfs_RAII{ logical_drive_number, PackedFile };
+		FatFS_mounter_t fatfs_RAII{ logical_drive_number, PackedFile, boot_sector_offset };
 
 		if (fatfs_RAII.get_error() != FR_OK) 
 			return E_UNKNOWN_FORMAT;
@@ -2057,6 +2062,7 @@ extern "C" {
 		int logical_drive_number = floppy_vol_index;
 
 		bool have_many_partitions;
+		size_t boot_sector_offset = 0;
 		{
 			size_t image_file_size = get_file_size(PackedFile);
 			auto hArchFile = open_file_read_shared_write(PackedFile);
@@ -2075,6 +2081,9 @@ extern "C" {
 				return E_EREAD;
 			}
 			have_many_partitions = (arch.disks.size() >= 2);
+			if (!have_many_partitions) { // Safety measure
+				boot_sector_offset = arch.disks[0].get_boot_sector_offset();
+			}
 		}
 
 		if (have_many_partitions) {
@@ -2097,7 +2106,7 @@ extern "C" {
 			}
 		}
 
-		FatFS_mounter_t fatfs_RAII{ logical_drive_number, PackedFile };
+		FatFS_mounter_t fatfs_RAII{ logical_drive_number, PackedFile, boot_sector_offset };
 		if (fatfs_RAII.get_error() != FR_OK)
 			return E_UNKNOWN_FORMAT;
 

@@ -3469,7 +3469,7 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 	/* Following code attempts to mount the volume. (find an FAT volume, analyze the BPB and initialize the filesystem object) */
 
 	fs->fs_type = 0;					/* Invalidate the filesystem object */
-	stat = disk_initialize(fs->pdrv, fs->image_path);	/* Initialize the volume hosting physical drive */
+	stat = disk_initialize(fs->pdrv, fs->image_path, fs->boot_sector_offset);	/* Initialize the volume hosting physical drive */
 	if (stat & STA_NOINIT) { 			/* Check if the initialization succeeded */
 		return FR_NOT_READY;			/* Failed to initialize due to no medium or hard error */
 	}
@@ -5959,7 +5959,7 @@ FRESULT f_mkfs (
 	ipart = LD2PT(vol);		/* Hosting partition (0:create as new, 1..:existing partition) */
 
 	/* Initialize the hosting physical drive */
-	ds = disk_initialize(pdrv, image_path);
+	ds = disk_initialize(pdrv, image_path, 0);
 	if (ds & STA_NOINIT) return FR_NOT_READY;
 	if (ds & STA_PROTECT) return FR_WRITE_PROTECTED;
 
@@ -6447,7 +6447,7 @@ FRESULT f_fdisk (
 
 
 	/* Initialize the physical drive */
-	stat = disk_initialize(pdrv, image_path);
+	stat = disk_initialize(pdrv, image_path, 0);
 	if (stat & STA_NOINIT) return FR_NOT_READY;
 	if (stat & STA_PROTECT) return FR_WRITE_PROTECTED;
 
