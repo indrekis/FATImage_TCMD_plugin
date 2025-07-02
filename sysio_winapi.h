@@ -38,7 +38,7 @@ file_handle_t open_file_overwrite(const char* filename);
 bool close_file(file_handle_t handle);
 bool flush_file(file_handle_t handle);
 bool delete_file(const char* filename);
-bool delete_dir(const char* filename);
+bool delete_dir(const char* filename); // Only for empty directories
 bool get_temp_filename(char* buff, const char prefix[]);
 bool set_file_pointer(file_handle_t handle, size_t offset);
 size_t read_file(file_handle_t handle, void* buffer_ptr, size_t size);

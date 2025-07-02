@@ -95,11 +95,25 @@ bool flush_file(file_handle_t handle) {
 }
 
 bool delete_file(const char* filename) {
+	DWORD attrs = GetFileAttributes(filename);
+	if (attrs == INVALID_FILE_ATTRIBUTES) 
+		return false;
+
+	if (attrs & FILE_ATTRIBUTE_READONLY) {
+		// TODO: Add asking user for confirmation?
+		SetFileAttributes(filename, attrs & ~FILE_ATTRIBUTE_READONLY);
+	}
 	return DeleteFile(filename);
 }
 
 bool delete_dir(const char* filename)
 {
+	DWORD attrs = GetFileAttributes(filename);
+	if (attrs == INVALID_FILE_ATTRIBUTES) return false;
+
+	if (attrs & FILE_ATTRIBUTE_READONLY) {
+		SetFileAttributes(filename, attrs & ~FILE_ATTRIBUTE_READONLY);
+	}
 	return RemoveDirectory(filename);
 }
 
