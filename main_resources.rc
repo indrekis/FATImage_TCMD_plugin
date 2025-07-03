@@ -25,8 +25,8 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,1,0,0
- PRODUCTVERSION 1,1,0,0
+ FILEVERSION 1,5,0,0
+ PRODUCTVERSION 1,5,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x29L
@@ -44,14 +44,14 @@ BEGIN
             VALUE "Comments", "FAT image read-write plugin for Total Commander (alpha version)"
             VALUE "CompanyName", "Indrekis"
             VALUE "FileDescription", "FAT images wcx plugin for Total Commander"
-            VALUE "FileVersion", "1.1.0.0"
+            VALUE "FileVersion", "1.5.0.0"
             VALUE "InternalName", "N/A"
             VALUE "LegalCopyright", "Copyright © 2022-2025 by Oleg Farenyuk, 2025 by Nataliia Sydor, 2002 by IvGzury"
             VALUE "LegalTrademarks", "N/A"
             VALUE "OriginalFilename", "fatimg.wcx64"
             VALUE "PrivateBuild", "N/A"
             VALUE "ProductName", "TCmd FAT images wcx plugin"
-            VALUE "ProductVersion", "1.10"
+            VALUE "ProductVersion", "1.50"
             VALUE "SpecialBuild", "N/A"
         END
     END
