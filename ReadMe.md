@@ -1,3 +1,20 @@
+- [Introduction](#introduction)
+- [Installation](#installation)
+- [Plugin configuration](#plugin-configuration)
+- [Compilation](#compilation)
+- [Preparing images for tests](#preparing-images-for-tests)
+  - [Linux](#linux)
+    - [Example 1 -- partitioned image](#example-1----partitioned-image)
+    - [Example 1 -- nonpartitioned floppy image](#example-1----nonpartitioned-floppy-image)
+    - [Example 2 -- script to create a 25-disks image](#example-2----script-to-create-a-25-disks-image)
+    - [Other](#other)
+  - [Windows](#windows)
+- [Problems and limitations](#problems-and-limitations)
+  - [Non-problems but caveats](#non-problems-but-caveats)
+  - [Plans](#plans)
+- [Credits](#credits)
+
+
 # Introduction
 
 FATImage is a wcx (archive) plugin for 64-bit and 32-bit Total Commander (TCmd) that provides read-write access to FAT filesystem images, including partitioned ones.
@@ -14,6 +31,7 @@ Key features:
 
 - Write operations include creating, modifying, deleting, and adding files and directories within FAT images.
 - Image creation is supported but currently limited: extended partitions are not yet supported, and the UI/UX is debatable.
+  - When creating a multiple-partition image, files are not copied because of the ambiguity -- please open the archive, select the appropriate disk, and repeat the copying.  
 - The plugin can read a broader range of images than it can write; the reading code is adapted to handle historical images with various quirks that the writing code does not fully support yet.
 - Writing is based on the famous [FatFS](https://elm-chan.org/fsw/ff/) modified to plugin-specific requirements: extended partition navigation, support for the image file name and offset, etc.
 
@@ -204,7 +222,7 @@ The exact command lines could depend on your Linux distribution.
 
 ### Example 1 -- nonpartitioned floppy image
 
-"`bash
+```bash
 dd if=/dev/zero of=floppy_144.img bs=1K count=1440
 sudo losetup -fP floppy_144.img
 sudo mkfs.fat -F 12 /dev/loop0
@@ -221,7 +239,7 @@ sudo losetup -d /dev/loop0
 
 Note -- this image is oversized; most systems do not support FAT disks larger than 2 GB.
 
-"`bash
+```bash
 #!/bin/bash
 set -e
 
