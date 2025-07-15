@@ -5,8 +5,8 @@
 #  cmake -A Win32 .. -G"Visual Studio 17"
 #
 # To enable FLTK usage:
-#  cmake -A x64   .. -G"Visual Studio 17" -DFLTK_ENABLED_EXPERIMENTAL=1
-#  cmake -A Win32 .. -G"Visual Studio 17" -DFLTK_ENABLED_EXPERIMENTAL=1
+#  cmake -A x64   .. -G"Visual Studio 17" -DFLTK_ENABLED_EXPERIMENTAL=1 -DCMAKE_TOOLCHAIN_FILE="<VCPKG_PATH>/vcpkg/scripts/buildsystems/vcpkg.cmake"	
+#  cmake -A Win32 .. -G"Visual Studio 17" -DFLTK_ENABLED_EXPERIMENTAL=1 -DCMAKE_TOOLCHAIN_FILE="<VCPKG_PATH>/vcpkg/scripts/buildsystems/vcpkg.cmake"	
 #
 # Build by:
 #  cmake --build . --config Release

@@ -87,6 +87,19 @@ BOOL APIENTRY DllMain(HANDLE hModule,
 	DWORD  ul_reason_for_call,
 	LPVOID lpReserved
 ) {
+#if 0
+	switch (ul_reason_for_call)
+	{
+	case DLL_PROCESS_ATTACH:
+	break;
+	case DLL_PROCESS_DETACH:
+		break;
+	case DLL_THREAD_ATTACH:
+		break;
+	case DLL_THREAD_DETACH:
+		break;
+	}
+#endif 
 	return TRUE;
 }
 
@@ -2342,7 +2355,7 @@ extern "C" {
 		}
 
 		delete win;
-	}
+	} //-V773
 	//====================================================================================
 
 	struct GUI_config_t {
@@ -2378,6 +2391,7 @@ extern "C" {
 	}
 
 	void update_custom_visibility(Fl_Widget* w, void* data) {
+		assert(data);
 		auto conf = static_cast<GUI_config_t*>(data);
 		const char* label = conf->fl_choise_single_size->text();
 		bool custom = (strcmp(label, "Custom") == 0);
@@ -2417,6 +2431,7 @@ extern "C" {
 
 		if (plugin_config.new_arc.single_part) {
 			const char* label = conf->fl_choise_single_size->text();
+			assert(label);
 			if (strcmp(label, "Custom") == 0) {
 				plugin_config.new_arc.custom_value = static_cast<size_t>(conf->fl_custom_val->value());
 				plugin_config.new_arc.custom_unit = conf->fl_custom_unit_choice->value();
