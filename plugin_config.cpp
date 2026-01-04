@@ -2,7 +2,7 @@
 // PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 /*
 * Floppy disk images unpack plugin for the Total Commander.
-* Copyright (c) 2017-2025, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
+* Copyright (c) 2017-2026, Oleg Farenyuk aka Indrekis ( indrekis@gmail.com )
 *
 * The code is released under the MIT License.
 */

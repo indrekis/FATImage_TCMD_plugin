@@ -46,7 +46,7 @@ BEGIN
             VALUE "FileDescription", "FAT images wcx plugin for Total Commander"
             VALUE "FileVersion", "1.5.0.0"
             VALUE "InternalName", "N/A"
-            VALUE "LegalCopyright", "Copyright © 2022-2025 by Oleg Farenyuk, 2025 by Nataliia Sydor, 2002 by IvGzury"
+            VALUE "LegalCopyright", "Copyright © 2022-2026 by Oleg Farenyuk, 2025 by Nataliia Sydor, 2002 by IvGzury"
             VALUE "LegalTrademarks", "N/A"
             VALUE "OriginalFilename", "fatimg.wcx64"
             VALUE "PrivateBuild", "N/A"
